@@ -1,0 +1,53 @@
+{
+  "name": "@mct/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:mock": "tsx watch src/mock-server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "verify:phase1": "node scripts/verify-phase1-architecture.mjs",
+    "test:inventory": "tsx scripts/inventory-smoke-test.ts",
+    "test:inventory:negative": "tsx scripts/inventory-negative-test.ts",
+    "test:workflow": "tsx scripts/workflow-engine-smoke-test.ts",
+    "test:rework": "tsx scripts/rework-engine-smoke-test.ts",
+    "test:timeline": "tsx scripts/timeline-smoke-test.ts",
+    "test:erp-import": "tsx scripts/erp-import-smoke-test.ts",
+    "test:erp-import:routes": "tsx scripts/erp-import-routes-smoke-test.ts",
+    "test:tech-pack-import": "tsx scripts/tech-pack-import-smoke-test.ts",
+    "test:daily-production-import": "tsx scripts/daily-production-import-smoke-test.ts",
+    "test:production-units": "tsx scripts/production-units-smoke-test.ts",
+    "test:progress": "tsx scripts/progress-engine-smoke-test.ts",
+    "test:process-progress": "tsx scripts/process-progress-smoke-test.ts",
+    "test:delay": "tsx scripts/delay-engine-smoke-test.ts",
+    "test:dashboard": "tsx scripts/dashboard-smoke-test.ts",
+    "test:auth": "tsx scripts/auth-smoke-test.ts",
+    "test:module-split": "tsx scripts/module-split-smoke-test.ts",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:seed:prod-admin": "tsx prisma/seed-production-admin.ts",
+    "prisma": "prisma",
+    "test:workbook-extractor": "tsx scripts/workbook-extractor-smoke-test.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^2.4.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.10.2",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

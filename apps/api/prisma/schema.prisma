@@ -1,0 +1,666 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  CEO
+  HEAD_OF_OPERATIONS
+  MERCHANT
+  ERP_MANAGER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  REJECTED
+  DISABLED
+}
+
+enum StageKind {
+  MANUAL
+  AUTOMATIC
+  HYBRID
+}
+
+enum StageCategory {
+  APPROVAL
+  PRODUCTION
+  INSPECTION
+  REWORK
+  DISPATCH
+}
+
+enum OrderStatus {
+  DRAFT
+  RUNNING
+  AT_RISK
+  DELAYED
+  DISPATCHED
+  CANCELLED
+}
+
+enum MovementType {
+  FORWARD
+  ROLLBACK
+  REWORK
+  SCRAP
+  DISPATCH
+}
+
+enum EventType {
+  FACTORY_CREATED
+  ORDER_CREATED
+  ORDER_UPDATED
+  STAGE_STARTED
+  STAGE_COMPLETED
+  MATERIAL_MOVED
+  REWORK_CREATED
+  IMPORT_CREATED
+  IMPORT_APPROVED
+  DISPATCH_COMPLETED
+  ISSUE_CREATED
+  ISSUE_UPDATED
+  WORK_TIMER_STARTED
+  WORK_TIMER_STOPPED
+  REPORT_GENERATED
+  SYSTEM_ERROR_CAPTURED
+}
+
+enum IssuePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum WorkLogModule {
+  SAMPLING
+  ORDERS
+  FABRIC
+  IMPORTS
+  REPORTS
+  ISSUES
+  SYSTEM
+}
+
+model Factory {
+  id                 String             @id @default(cuid())
+  name               String
+  code               String             @unique
+  workingDays        String[]
+  shiftsPerDay       Int                @default(1)
+  workingHoursPerDay Float              @default(8)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  users              User[]
+  workflowTemplates  WorkflowTemplate[]
+  orders             Order[]
+  events             Event[]
+  systemErrors       SystemError[]
+  issues             Issue[]
+  workLogs           WorkLog[]
+  productionUnits     ProductionUnit[]
+  unitColorMappings   UnitColorMapping[]
+  importStageMappings ImportStageMapping[]
+  fabricDyeingSnapshots FabricDyeingSnapshot[]
+  wipSnapshots          WipSnapshot[]
+  techPackStyles        TechPackStyle[]
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  factoryId          String
+  email              String    @unique
+  name               String
+  role               RoleName
+  requestedRole      RoleName?
+  status             UserStatus @default(ACTIVE)
+  approvedAt         DateTime?
+  approvedBy         String?
+  passwordHash       String    @default("")
+  isActive           Boolean   @default(true)
+  twoFactorEnabled   Boolean   @default(false)
+  twoFactorSecret    String?
+  passwordChangedAt  DateTime?
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  factory            Factory   @relation(fields: [factoryId], references: [id])
+  sessions           AuthSession[]
+  passwordResetTokens PasswordResetToken[]
+  assignedIssues     Issue[] @relation("AssignedIssues")
+  createdIssues      Issue[] @relation("CreatedIssues")
+  issueComments      IssueComment[]
+  workLogs           WorkLog[]
+}
+
+model AuthSession {
+  id           String   @id @default(cuid())
+  userId       String
+  tokenHash    String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+  lastSeenAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model WorkflowTemplate {
+  id          String  @id @default(cuid())
+  factoryId   String
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  factory Factory @relation(fields: [factoryId], references: [id])
+
+  stages WorkflowStage[]
+  orders Order[]
+
+  transitions WorkflowTransition[]
+
+  @@unique([factoryId, name])
+}
+
+model WorkflowStage {
+  id                 String @id @default(cuid())
+  workflowTemplateId String
+
+  name String
+  code String
+
+  kind     StageKind
+  category StageCategory
+
+  expectedDurationDays Int?
+
+  sequence Int
+
+  allowsPartial  Boolean @default(true)
+  allowsRollback Boolean @default(true)
+
+  isDispatchStage Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id])
+
+  orderStages OrderStage[]
+
+  inventories StageInventory[]
+
+  outgoingTransitions WorkflowTransition[] @relation("fromStage")
+  incomingTransitions WorkflowTransition[] @relation("toStage")
+
+  @@unique([workflowTemplateId, code])
+}
+
+model Order {
+  id                 String             @id @default(cuid())
+  factoryId          String
+  workflowTemplateId String
+  orderNumber        String
+  buyerName          String
+  productCategory    String
+  orderQuantity      Int
+  deliveryDate       DateTime
+  status             OrderStatus        @default(RUNNING)
+  currentStageCode   String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  factory            Factory            @relation(fields: [factoryId], references: [id])
+  workflowTemplate   WorkflowTemplate   @relation(fields: [workflowTemplateId], references: [id])
+  stages             OrderStage[]
+  materialMovements  MaterialMovement[]
+  reworkTickets      ReworkTicket[]
+  events             Event[]
+  inventories        StageInventory[]
+  samplingApprovals  SamplingApproval[]
+  orderLines         OrderLine[]
+
+  @@unique([factoryId, orderNumber])
+}
+
+model ProductionUnit {
+  id        String   @id @default(cuid())
+  factoryId String
+  code      String
+  name      String
+  kind      String   @default("PRODUCTION")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  factory   Factory  @relation(fields: [factoryId], references: [id])
+
+  colorMappings UnitColorMapping[]
+  orderLines    OrderLine[]
+
+  @@unique([factoryId, code])
+}
+
+model UnitColorMapping {
+  id               String   @id @default(cuid())
+  factoryId        String
+  productionUnitId String?
+  colorHex         String
+  label            String
+  productionStatus String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  factory          Factory  @relation(fields: [factoryId], references: [id])
+  productionUnit   ProductionUnit? @relation(fields: [productionUnitId], references: [id])
+
+  @@unique([factoryId, colorHex])
+}
+
+
+model ImportStageMapping {
+  id             String   @id @default(cuid())
+  factoryId      String
+  importType     String
+  sourceColumn   String
+  targetStageKey String
+  quantityType   String
+  applyMode      String   @default("snapshot")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  factory        Factory  @relation(fields: [factoryId], references: [id])
+
+  @@unique([factoryId, importType, sourceColumn])
+}
+
+model FabricDyeingSnapshot {
+  id                              String   @id @default(cuid())
+  factoryId                       String
+  uploadId                        String?
+  sourceFileName                  String
+  rowNumber                       Int
+  buyerName                       String
+  styleName                       String
+  colorName                       String
+  fabricDescription               String?
+  orderQuantity                   Int      @default(0)
+  actualCutQuantity               Int      @default(0)
+  stitchOutQuantity               Int      @default(0)
+  gsm                             Float    @default(0)
+  bodyAverage                     Float    @default(0)
+  greigeBookingKg                 Float    @default(0)
+  pendingExtraFabricForDyeingKg   Float    @default(0)
+  fabricSentForDyeingKg           Float    @default(0)
+  lotNumber                       String?
+  actualShortageFabricBalanceKg   Float    @default(0)
+  inhouseAfterDyeingKg            Float    @default(0)
+  shortagePercent                 Float    @default(0)
+  status                          String?
+  dyeingParty                     String?
+  snapshotDate                    DateTime?
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+  factory                         Factory  @relation(fields: [factoryId], references: [id])
+
+  @@index([factoryId, styleName])
+  @@index([factoryId, createdAt])
+}
+
+model WipSnapshot {
+  id             String   @id @default(cuid())
+  factoryId      String
+  uploadId       String?
+  sourceFileName String
+  rowNumber      Int
+  unitCode       String
+  unitName       String
+  styleName      String
+  colorName      String?
+  quantity       Int
+  comments       String?
+  snapshotDate   DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  factory        Factory  @relation(fields: [factoryId], references: [id])
+
+  @@index([factoryId, unitCode])
+  @@index([factoryId, styleName])
+  @@index([factoryId, createdAt])
+}
+
+model TechPackStyle {
+  id                 String   @id @default(cuid())
+  factoryId          String
+  uploadId           String?
+  sourceFileName     String
+  sourceFileUrl      String?
+  sourceFileStorageKey String?
+  styleNumber        String
+  styleCode          String?
+  descriptionOne     String?
+  descriptionTwo     String?
+  styleType          String?
+  colorways          String?
+  department         String?
+  brandDivision      String?
+  season             String?
+  sizeRange          String?
+  sizes              String?
+  baseSize           String?
+  productDescription String?
+  mainMaterials      String?
+  sourcingChampion   String?
+  supplier           String?
+  extractedText      String?
+  previewImageUrl    String?
+  previewImageStorageKey String?
+  previewPageNumber  Int?
+  uploadedBy         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  factory            Factory  @relation(fields: [factoryId], references: [id])
+
+  @@index([factoryId, styleNumber])
+  @@index([factoryId, createdAt])
+}
+
+model OrderLine {
+  id                 String   @id @default(cuid())
+  orderId            String
+  productionUnitId   String?
+  buyerName          String
+  styleName          String
+  colorName          String
+  description        String?
+  orderQuantity      Int
+  cuttingTotalQty    Int      @default(0)
+  cuttingToLineBal   Int      @default(0)
+  lineLoadingQty     Int      @default(0)
+  todayLineOutQty    Int      @default(0)
+  totalLineOutQty    Int      @default(0)
+  lineInBalanceQty   Int      @default(0)
+  productionStatus   String?
+  rowColorHex        String?
+  lastUpdatedAt      DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  order              Order    @relation(fields: [orderId], references: [id])
+  productionUnit     ProductionUnit? @relation(fields: [productionUnitId], references: [id])
+
+  @@unique([orderId, colorName])
+}
+
+model SamplingApproval {
+  id             String    @id @default(cuid())
+  orderId        String
+  checkpointCode String
+  label          String
+  owner          String
+  timeframe      String
+  evidence       String
+  status         String    @default("PENDING")
+  comments       String?
+  submittedAt    DateTime?
+  approvedAt     DateTime?
+  updatedBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  order          Order     @relation(fields: [orderId], references: [id])
+
+  @@unique([orderId, checkpointCode])
+}
+
+model OrderStage {
+  id              String @id @default(cuid())
+  orderId         String
+  workflowStageId String
+  stageCode       String
+  stageName       String
+  plannedQuantity Int
+
+  inputQuantity Int @default(0)
+
+  completedQuantity Int @default(0)
+
+  reworkedQuantity Int @default(0)
+
+  scrappedQuantity Int @default(0)
+
+  currentQuantity Int           @default(0)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  order           Order         @relation(fields: [orderId], references: [id])
+  workflowStage   WorkflowStage @relation(fields: [workflowStageId], references: [id])
+}
+
+model MaterialMovement {
+  id            String       @id @default(cuid())
+  orderId       String
+  fromStageCode String?
+  toStageCode   String?
+  quantity      Int
+  movementType  MovementType
+  notes         String?
+  createdAt     DateTime     @default(now())
+  order         Order        @relation(fields: [orderId], references: [id])
+}
+
+model ReworkTicket {
+  id               String   @id @default(cuid())
+
+  orderId          String
+
+  sourceStageCode  String
+
+  quantity         Int
+
+  reason           String
+
+  department       String?
+
+  severity         String?
+
+  rootCause        String?
+
+  correctiveAction String?
+
+  closedAt         DateTime?
+
+  createdAt        DateTime @default(now())
+
+  updatedAt        DateTime @updatedAt
+
+  order            Order @relation(fields: [orderId], references: [id])
+}
+
+model Event {
+  id        String    @id @default(cuid())
+  factoryId String
+  orderId   String?
+  type      EventType
+  message   String
+  metadata  Json      @default("{}")
+  createdBy String?
+  source    String?
+  createdAt DateTime  @default(now())
+  factory   Factory   @relation(fields: [factoryId], references: [id])
+  order     Order?    @relation(fields: [orderId], references: [id])
+
+  @@index([factoryId, createdAt])
+  @@index([factoryId, type])
+  @@index([createdBy])
+}
+
+model SystemError {
+  id          String   @id @default(cuid())
+  factoryId   String
+  source      String
+  severity    String   @default("ERROR")
+  message     String
+  stack       String?
+  route       String?
+  method      String?
+  userId      String?
+  metadata    Json     @default("{}")
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  createdAt   DateTime @default(now())
+  factory     Factory  @relation(fields: [factoryId], references: [id])
+
+  @@index([factoryId, createdAt])
+  @@index([factoryId, resolvedAt])
+}
+
+model Issue {
+  id             String        @id @default(cuid())
+  factoryId      String
+  title          String
+  description    String?
+  status         IssueStatus   @default(OPEN)
+  priority       IssuePriority @default(MEDIUM)
+  module         WorkLogModule @default(SYSTEM)
+  linkedType     String?
+  linkedId       String?
+  assignedToId   String?
+  createdById    String?
+  resolvedAt     DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  factory        Factory       @relation(fields: [factoryId], references: [id])
+  assignedTo     User?         @relation("AssignedIssues", fields: [assignedToId], references: [id])
+  createdBy      User?         @relation("CreatedIssues", fields: [createdById], references: [id])
+  comments       IssueComment[]
+
+  @@index([factoryId, status])
+  @@index([factoryId, priority])
+  @@index([assignedToId])
+}
+
+model IssueComment {
+  id        String   @id @default(cuid())
+  issueId   String
+  userId    String?
+  body      String
+  createdAt DateTime @default(now())
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([issueId])
+}
+
+model WorkLog {
+  id          String        @id @default(cuid())
+  factoryId   String
+  userId      String
+  module      WorkLogModule
+  action      String        @default("ACTIVITY_RECORDED")
+  itemType    String?
+  itemId      String?
+  itemLabel   String?
+  notes       String?
+  metadata    Json          @default("{}")
+  startedAt   DateTime?
+  stoppedAt   DateTime?
+  durationMin Int?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  factory     Factory       @relation(fields: [factoryId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+
+  @@index([factoryId, createdAt])
+  @@index([userId, createdAt])
+  @@index([module])
+}
+
+model Upload {
+  id           String   @id @default(cuid())
+  factoryId    String
+  fileName     String
+  sourceType   String
+  status       String   @default("UPLOADED")
+  rowsReceived Int      @default(0)
+  rowsAccepted Int      @default(0)
+  rowsRejected Int      @default(0)
+  errors       Json     @default("[]")
+  createdAt    DateTime @default(now())
+}
+
+enum TransitionType {
+  FORWARD
+  ROLLBACK
+  REWORK
+  REJECT
+}
+
+model WorkflowTransition {
+  id String @id @default(cuid())
+
+  workflowTemplateId String
+
+  fromStageId String
+  toStageId   String
+
+  transitionType TransitionType
+
+  createdAt DateTime @default(now())
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id])
+
+  fromStage WorkflowStage @relation("fromStage", fields: [fromStageId], references: [id])
+
+  toStage WorkflowStage @relation("toStage", fields: [toStageId], references: [id])
+}
+
+model StageInventory {
+  id String @id @default(cuid())
+
+  orderId String
+
+  workflowStageId String
+
+  quantity Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  workflowStage WorkflowStage @relation(fields: [workflowStageId], references: [id])
+
+  @@unique([orderId, workflowStageId])
+}

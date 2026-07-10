@@ -1,0 +1,38 @@
+{
+  "name": "rishi-fabrics-control-tower",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:api:mock": "npm --workspace apps/api run dev:mock",
+    "dev:web": "npm --workspace apps/web run dev",
+    "db:push": "npm --workspace apps/api run db:push",
+    "db:seed": "npm --workspace apps/api run db:seed",
+    "verify:phase1": "npm --workspace apps/api run verify:phase1",
+    "test:inventory": "npm --workspace apps/api run test:inventory",
+    "test:inventory:negative": "npm --workspace apps/api run test:inventory:negative",
+    "test:workflow": "npm --workspace apps/api run test:workflow",
+    "test:rework": "npm --workspace apps/api run test:rework",
+    "test:timeline": "npm --workspace apps/api run test:timeline",
+    "test:erp-import": "npm --workspace apps/api run test:erp-import",
+    "test:erp-import:routes": "npm --workspace apps/api run test:erp-import:routes",
+    "test:tech-pack-import": "npm --workspace apps/api run test:tech-pack-import",
+    "test:daily-production-import": "npm --workspace apps/api run test:daily-production-import",
+    "test:production-units": "npm --workspace apps/api run test:production-units",
+    "test:progress": "npm --workspace apps/api run test:progress",
+    "test:process-progress": "npm --workspace apps/api run test:process-progress",
+    "test:delay": "npm --workspace apps/api run test:delay",
+    "test:dashboard": "npm --workspace apps/api run test:dashboard",
+    "test:auth": "npm --workspace apps/api run test:auth",
+    "test:module-split": "npm --workspace apps/api run test:module-split",
+    "prisma": "npm --workspace apps/api run prisma",
+    "test:workbook-extractor": "npm --workspace apps/api run test:workbook-extractor"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
