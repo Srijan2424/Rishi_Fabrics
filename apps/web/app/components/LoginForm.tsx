@@ -37,30 +37,35 @@ export function LoginForm() {
     setMessage("");
     setLoading(true);
 
-    const response = await fetch(apiUrl + "/auth/login", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
+    try {
+      const response = await fetch(apiUrl + "/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
 
-    const data = await response.json().catch(() => ({}));
-    setLoading(false);
+      const data = await response.json().catch(() => ({}));
 
-    if (!response.ok) {
-      setError(data.error ?? "Login failed");
-      return;
+      if (!response.ok) {
+        setError(data.error ?? "Login failed. Please check the details or try again.");
+        return;
+      }
+
+      if (data.requiresTwoFactor) {
+        router.push(`/two-factor?challengeId=${encodeURIComponent(data.challengeId)}&next=${encodeURIComponent(searchParams.get("next") ?? "/")}`);
+        return;
+      }
+
+      const requestedNext = searchParams.get("next");
+      const destination = requestedNext && requestedNext !== "/" ? requestedNext : homeForUser(data.user ?? {});
+      router.push(destination);
+      router.refresh();
+    } catch {
+      setError("Unable to reach the Rishi Fabrics server. Please try again or contact admin if this continues.");
+    } finally {
+      setLoading(false);
     }
-
-    if (data.requiresTwoFactor) {
-      router.push(`/two-factor?challengeId=${encodeURIComponent(data.challengeId)}&next=${encodeURIComponent(searchParams.get("next") ?? "/")}`);
-      return;
-    }
-
-    const requestedNext = searchParams.get("next");
-    const destination = requestedNext && requestedNext !== "/" ? requestedNext : homeForUser(data.user ?? {});
-    router.push(destination);
-    router.refresh();
   }
 
   async function submitRequest(event: FormEvent) {
