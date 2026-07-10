@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { savePilotSessionToken } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 const requestRoles = [
@@ -57,6 +58,7 @@ export function LoginForm() {
         return;
       }
 
+      savePilotSessionToken(data.sessionToken);
       const requestedNext = searchParams.get("next");
       const destination = requestedNext && requestedNext !== "/" ? requestedNext : homeForUser(data.user ?? {});
       router.push(destination);

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { authFetch } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
@@ -13,7 +14,7 @@ export function TwoFactorSetup({ enabled }: { enabled: boolean }) {
 
   async function setup() {
     setError("");
-    const response = await fetch(`${apiUrl}/auth/2fa/setup`, {
+    const response = await authFetch(`${apiUrl}/auth/2fa/setup`, {
       method: "POST",
       credentials: "include"
     });
@@ -26,7 +27,7 @@ export function TwoFactorSetup({ enabled }: { enabled: boolean }) {
   async function enable(event: FormEvent) {
     event.preventDefault();
     setError("");
-    const response = await fetch(`${apiUrl}/auth/2fa/enable`, {
+    const response = await authFetch(`${apiUrl}/auth/2fa/enable`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

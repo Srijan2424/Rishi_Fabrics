@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { authFetch } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
@@ -22,7 +23,7 @@ export function WorkflowForm({ factories }: { factories: Factory[] }) {
     const form = new FormData(event.currentTarget);
 
     try {
-      const response = await fetch(`${apiUrl}/workflows`, {
+      const response = await authFetch(`${apiUrl}/workflows`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { clientApiUrl } from "../lib/client-api";
+import { authFetch, clientApiUrl } from "../lib/client-api";
 
 type Issue = { id: string; title: string; status: string; priority: string; module: string; description?: string | null };
 
@@ -15,7 +15,7 @@ export function IssueManager({ initialIssues }: { initialIssues: Issue[] }) {
 
   async function createIssue() {
     setMessage("");
-    const response = await fetch(clientApiUrl + "/issues", {
+    const response = await authFetch(clientApiUrl + "/issues", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -32,7 +32,7 @@ export function IssueManager({ initialIssues }: { initialIssues: Issue[] }) {
   }
 
   async function resolveIssue(id: string) {
-    const response = await fetch(clientApiUrl + "/issues/" + id, {
+    const response = await authFetch(clientApiUrl + "/issues/" + id, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

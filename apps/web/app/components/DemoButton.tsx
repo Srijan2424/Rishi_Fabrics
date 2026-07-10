@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { clientApiUrl } from "../lib/client-api";
+import { authFetch, clientApiUrl } from "../lib/client-api";
 
 type DemoStep = { title: string; body: string; preview: string };
 type Guide = { role: string; languages: { en: DemoStep[]; hi: DemoStep[] } };
@@ -22,7 +22,7 @@ export function DemoButton() {
     setError("");
     if (!guide) {
       try {
-        const response = await fetch(clientApiUrl + "/demo-guides/current", { credentials: "include" });
+        const response = await authFetch(clientApiUrl + "/demo-guides/current", { credentials: "include" });
         if (response.ok) {
           const nextGuide = await response.json();
           setGuide(nextGuide);

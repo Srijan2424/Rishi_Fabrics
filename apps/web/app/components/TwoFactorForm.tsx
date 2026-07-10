@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { savePilotSessionToken } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
@@ -29,6 +30,7 @@ export function TwoFactorForm() {
       return;
     }
 
+    savePilotSessionToken(data.sessionToken);
     router.push(searchParams.get("next") ?? "/");
     router.refresh();
   }

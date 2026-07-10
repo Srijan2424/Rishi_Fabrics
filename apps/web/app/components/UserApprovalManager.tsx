@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authFetch } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 const roles = ["CEO", "HEAD_OF_OPERATIONS", "MERCHANT", "ERP_MANAGER", "ADMIN"];
@@ -41,7 +42,7 @@ export function UserApprovalManager({ initialUsers }: { initialUsers: ManagedUse
   async function updateUser(id: string, action: "approve" | "reject", role?: string) {
     setBusyId(id + action);
     setMessage("");
-    const response = await fetch(apiUrl + "/users/" + id + "/" + action, {
+    const response = await authFetch(apiUrl + "/users/" + id + "/" + action, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -60,7 +61,7 @@ export function UserApprovalManager({ initialUsers }: { initialUsers: ManagedUse
   async function patchUser(id: string, body: Record<string, string>) {
     setBusyId(id + JSON.stringify(body));
     setMessage("");
-    const response = await fetch(apiUrl + "/users/" + id, {
+    const response = await authFetch(apiUrl + "/users/" + id, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { authFetch } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
@@ -22,7 +23,7 @@ export function ReworkForm({ orderId, stages }: { orderId: string; stages: Stage
     const form = new FormData(event.currentTarget);
 
     try {
-      const response = await fetch(`${apiUrl}/orders/${orderId}/rework`, {
+      const response = await authFetch(`${apiUrl}/orders/${orderId}/rework`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { pilotSessionCookieName } from "./client-api";
 
 export const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
@@ -17,7 +18,11 @@ export type CurrentUser = {
 async function authHeaders(): Promise<HeadersInit> {
   const cookieStore = await cookies();
   const session = cookieStore.get("mct_session");
-  return session ? { Cookie: `mct_session=${session.value}` } : {};
+  const pilotSession = cookieStore.get(pilotSessionCookieName);
+  return {
+    ...(session ? { Cookie: `mct_session=${session.value}` } : {}),
+    ...(pilotSession ? { Authorization: `Bearer ${pilotSession.value}` } : {})
+  };
 }
 
 async function getJson(path: string, fallback: unknown) {

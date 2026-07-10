@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useEffect, useState } from "react";
 import { ReportIssueButton } from "./ReportIssueButton";
-import { clientApiUrl } from "../lib/client-api";
+import { authFetch, clientApiUrl } from "../lib/client-api";
 
 type TechPackStyle = {
   id: string;
@@ -28,7 +28,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
 
   async function loadStyles() {
     try {
-      const response = await fetch(clientApiUrl + "/sampling/tech-packs/styles", {
+      const response = await authFetch(clientApiUrl + "/sampling/tech-packs/styles", {
         credentials: "include"
       });
       if (response.ok) {
@@ -66,7 +66,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
 
     let response: Response;
     try {
-      response = await fetch(clientApiUrl + "/sampling/tech-packs/upload", {
+      response = await authFetch(clientApiUrl + "/sampling/tech-packs/upload", {
         method: "POST",
         credentials: "include",
         body: formData

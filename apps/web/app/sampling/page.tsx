@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SamplingWorkspace } from "../components/SamplingWorkspace";
 import { TechPackUpload } from "../components/TechPackUpload";
+import { authFetch } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
@@ -58,7 +59,7 @@ function isSamplingOrder(order: Order) {
 }
 
 async function fetchOrders() {
-  const response = await fetch(`${apiUrl}/orders`, {
+  const response = await authFetch(`${apiUrl}/orders`, {
     cache: "no-store",
     credentials: "include"
   });
@@ -72,7 +73,7 @@ async function fetchOrders() {
 }
 
 async function fetchTechPackStyles() {
-  const response = await fetch(`${apiUrl}/sampling/tech-packs/styles`, {
+  const response = await authFetch(`${apiUrl}/sampling/tech-packs/styles`, {
     cache: "no-store",
     credentials: "include"
   });

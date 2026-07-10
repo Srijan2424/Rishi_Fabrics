@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { authFetch } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
@@ -172,7 +173,7 @@ export function SamplingWorkspace({
     setError("");
 
     try {
-      const response = await fetch(`${apiUrl}/orders/${orderId}/sampling-decision`, {
+      const response = await authFetch(`${apiUrl}/orders/${orderId}/sampling-decision`, {
         method: "PATCH",
         credentials: "include",
         headers: {
@@ -204,7 +205,7 @@ export function SamplingWorkspace({
     setError("");
 
     try {
-      const response = await fetch(`${apiUrl}/orders/${orderId}/sampling-approvals/${checkpointCode}`, {
+      const response = await authFetch(`${apiUrl}/orders/${orderId}/sampling-approvals/${checkpointCode}`, {
         method: "PATCH",
         credentials: "include",
         headers: {
@@ -246,7 +247,7 @@ export function SamplingWorkspace({
     setError("");
 
     try {
-      const response = await fetch(`${apiUrl}/orders/${order.id}/sampling-quantity`, {
+      const response = await authFetch(`${apiUrl}/orders/${order.id}/sampling-quantity`, {
         method: "PATCH",
         credentials: "include",
         headers: {
@@ -309,7 +310,7 @@ export function SamplingWorkspace({
     setError("");
 
     try {
-      const response = await fetch(`${apiUrl}/orders/${order.id}/sampling-details`, {
+      const response = await authFetch(`${apiUrl}/orders/${order.id}/sampling-details`, {
         method: "PATCH",
         credentials: "include",
         headers: {

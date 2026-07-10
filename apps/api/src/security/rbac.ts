@@ -57,6 +57,7 @@ const rolePermissions: Record<RoleName, Permission[]> = {
 };
 
 export const sessionCookieName = "mct_session";
+export const bearerSessionScheme = "Bearer ";
 
 declare global {
   namespace Express {
@@ -98,9 +99,21 @@ function parseCookie(header: string | undefined, name: string): string | undefin
   return undefined;
 }
 
+export function sessionTokenFromRequest(req: Request): string | undefined {
+  const cookieToken = parseCookie(req.header("cookie"), sessionCookieName);
+  if (cookieToken) return cookieToken;
+
+  const authorization = req.header("authorization") ?? "";
+  if (authorization.startsWith(bearerSessionScheme)) {
+    return authorization.slice(bearerSessionScheme.length).trim() || undefined;
+  }
+
+  return undefined;
+}
+
 export async function attachSessionAuth(req: Request, _res: Response, next: NextFunction) {
   try {
-    const token = parseCookie(req.header("cookie"), sessionCookieName);
+    const token = sessionTokenFromRequest(req);
     if (!token) {
       next();
       return;

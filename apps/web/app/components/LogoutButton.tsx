@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { authFetch, clearPilotSessionToken } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
@@ -8,10 +9,8 @@ export function LogoutButton() {
   const router = useRouter();
 
   async function logout() {
-    await fetch(`${apiUrl}/auth/logout`, {
-      method: "POST",
-      credentials: "include"
-    });
+    await authFetch(`${apiUrl}/auth/logout`, { method: "POST" });
+    clearPilotSessionToken();
     router.push("/login");
     router.refresh();
   }

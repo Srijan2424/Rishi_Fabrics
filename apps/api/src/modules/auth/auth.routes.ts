@@ -6,7 +6,7 @@ import { asyncRoute } from "../../http.js";
 import { hashPassword, verifyPassword } from "../../security/password.js";
 import { createOtpAuthUrl, createTotpSecret, verifyTotp } from "../../security/totp.js";
 import { createOpaqueToken, hashToken } from "../../security/tokens.js";
-import { getPermissions, requireAuthenticated, sessionCookieName } from "../../security/rbac.js";
+import { getPermissions, requireAuthenticated, sessionCookieName, sessionTokenFromRequest } from "../../security/rbac.js";
 
 export const authRouter = Router();
 
@@ -203,7 +203,7 @@ authRouter.post("/login", asyncRoute(async (req, res) => {
 
   const session = await createSession(user.id, req);
   res.setHeader("Set-Cookie", sessionCookie(session.token, session.maxAgeSeconds));
-  res.json({ requiresTwoFactor: false, user: publicUser(user) });
+  res.json({ requiresTwoFactor: false, sessionToken: session.token, user: publicUser(user) });
 }));
 
 authRouter.post("/2fa/verify", asyncRoute(async (req, res) => {
@@ -224,7 +224,7 @@ authRouter.post("/2fa/verify", asyncRoute(async (req, res) => {
   pendingTwoFactorChallenges.delete(input.challengeId);
   const session = await createSession(user.id, req);
   res.setHeader("Set-Cookie", sessionCookie(session.token, session.maxAgeSeconds));
-  res.json({ user: publicUser(user) });
+  res.json({ sessionToken: session.token, user: publicUser(user) });
 }));
 
 authRouter.get("/me", requireAuthenticated, asyncRoute(async (req, res) => {
@@ -233,13 +233,11 @@ authRouter.get("/me", requireAuthenticated, asyncRoute(async (req, res) => {
 }));
 
 authRouter.post("/logout", asyncRoute(async (req, res) => {
-  const cookie = req.header("cookie") ?? "";
-  const match = cookie.split(";").map((item) => item.trim()).find((item) => item.startsWith(`${sessionCookieName}=`));
-  const token = match?.split("=").slice(1).join("=");
+  const token = sessionTokenFromRequest(req);
 
   if (token) {
     await prisma.authSession.updateMany({
-      where: { tokenHash: hashToken(decodeURIComponent(token)), revokedAt: null },
+      where: { tokenHash: hashToken(token), revokedAt: null },
       data: { revokedAt: new Date() }
     });
   }

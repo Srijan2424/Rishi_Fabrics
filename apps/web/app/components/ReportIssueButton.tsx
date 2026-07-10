@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { clientApiUrl } from "../lib/client-api";
+import { authFetch, clientApiUrl } from "../lib/client-api";
 
 type Props = {
   title: string;
@@ -27,7 +27,7 @@ export function ReportIssueButton({ title, module = "SYSTEM", linkedType, linked
       "Context:",
       JSON.stringify(context ?? {}, null, 2)
     ].join("\\n");
-    const response = await fetch(clientApiUrl + "/issues", {
+    const response = await authFetch(clientApiUrl + "/issues", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

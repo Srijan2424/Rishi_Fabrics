@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import { ReportIssueButton } from "./ReportIssueButton";
+import { authFetch } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 const sampleImportDate = "2026-06-23T00:00:00.000Z";
@@ -450,7 +451,7 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
     try {
       const hasDirectWorkbookFile = sourceType === "EXCEL" && selectedFile !== null;
       const response = hasDirectWorkbookFile
-        ? await fetch(`${apiUrl}/erp-import/preview-workbook`, {
+        ? await authFetch(`${apiUrl}/erp-import/preview-workbook`, {
           method: "POST",
           credentials: "include",
           body: (() => {
@@ -462,7 +463,7 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
           })()
         })
         : previewEndpointByKind[importKind]
-          ? await fetch(`${apiUrl}${previewEndpointByKind[importKind]}`, {
+          ? await authFetch(`${apiUrl}${previewEndpointByKind[importKind]}`, {
           method: "POST",
           credentials: "include",
           headers: {
@@ -515,7 +516,7 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
     setError("");
 
     try {
-      const response = await fetch(`${apiUrl}${applyEndpoint}`, {
+      const response = await authFetch(`${apiUrl}${applyEndpoint}`, {
         method: "POST",
         credentials: "include",
         headers: {
