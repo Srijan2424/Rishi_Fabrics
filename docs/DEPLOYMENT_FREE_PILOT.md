@@ -90,18 +90,19 @@ WEB_ORIGIN=<vercel-web-url>
 Then redeploy the API.
 
 ## 4. First Smoke Test Online
-1. Open API /health and confirm ok=true and database=ONLINE.
-2. Open web login page.
-3. Log in as Admin.
-4. Request access with one new ERP/Merchant test email.
-5. Confirm that user cannot log in before approval.
-6. Approve the user in Settings.
-7. Confirm normal login after approval.
-8. Upload Tech Pack, Daily Production, WIP, and Fabric/Dyeing files.
-9. Check Reports as MD role after approving/creating an MD user.
-10. Check Monitoring as Admin.
-11. Create one test issue from any user's Report Issue button and confirm the Admin alert email arrives.
-12. Upload a tech pack and confirm the style preview loads. The Supabase bucket should remain private; files are served through the authenticated API.
+1. Open API /health and confirm ok=true.
+2. Open API /health/deep and confirm database=ONLINE.
+3. Open web login page.
+4. Log in as Admin.
+5. Request access with one new ERP/Merchant test email.
+6. Confirm that user cannot log in before approval.
+7. Approve the user in Settings.
+8. Confirm normal login after approval.
+9. Upload Tech Pack, Daily Production, WIP, and Fabric/Dyeing files.
+10. Check Reports as MD role after approving/creating an MD user.
+11. Check Monitoring as Admin.
+12. Create one test issue from any user's Report Issue button and confirm the Admin alert email arrives.
+13. Upload a tech pack and confirm the style preview loads. The Supabase bucket should remain private; files are served through the authenticated API.
 
 ## 5. Known Pilot Limitation
 If Supabase storage env vars are not configured, tech-pack preview images fall back to local API disk. On free Render, disk is ephemeral. For production, configure Supabase Storage before uploading real tech packs.

@@ -16,8 +16,10 @@
 - SUPABASE_STORAGE_BUCKET
 
 ## Health check
-- API health endpoint: /health
-- Expected healthy response includes ok=true, database=ONLINE, and environment checks.
+- API deploy health endpoint: /health
+- Expected deploy response includes ok=true and environment checks.
+- Deep readiness endpoint: /health/deep
+- Expected deep response includes ok=true and database=ONLINE after DATABASE_URL is correct.
 
 ## Before pilot deployment
 1. Run API build.

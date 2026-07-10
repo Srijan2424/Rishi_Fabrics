@@ -60,7 +60,30 @@ app.use(express.json({ limit: "2mb" }));
 app.use(attachSessionAuth);
 app.use(attachDevAuth);
 
-app.get("/health", async (_req, res, next) => {
+function environmentChecks() {
+  return {
+    DATABASE_URL: Boolean(process.env.DATABASE_URL),
+    SESSION_SECRET: Boolean(process.env.SESSION_SECRET),
+    CORS_ORIGIN: Boolean(process.env.CORS_ORIGIN || process.env.WEB_ORIGIN),
+    ADMIN_ALERT_EMAIL: Boolean(process.env.ADMIN_ALERT_EMAIL),
+    RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
+    SUPABASE_URL: Boolean(process.env.SUPABASE_URL),
+    SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    SUPABASE_STORAGE_BUCKET: Boolean(process.env.SUPABASE_STORAGE_BUCKET),
+    SENTRY_DSN: Boolean(process.env.SENTRY_DSN)
+  };
+}
+
+app.get("/health", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "rishi-fabrics-api",
+    environment: process.env.NODE_ENV ?? "development",
+    checks: environmentChecks()
+  });
+});
+
+app.get("/health/deep", async (_req, res, next) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     res.json({
@@ -68,17 +91,7 @@ app.get("/health", async (_req, res, next) => {
       service: "rishi-fabrics-api",
       database: "ONLINE",
       environment: process.env.NODE_ENV ?? "development",
-      checks: {
-        DATABASE_URL: Boolean(process.env.DATABASE_URL),
-        SESSION_SECRET: Boolean(process.env.SESSION_SECRET),
-        CORS_ORIGIN: Boolean(process.env.CORS_ORIGIN || process.env.WEB_ORIGIN),
-        ADMIN_ALERT_EMAIL: Boolean(process.env.ADMIN_ALERT_EMAIL),
-        RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
-        SUPABASE_URL: Boolean(process.env.SUPABASE_URL),
-        SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-        SUPABASE_STORAGE_BUCKET: Boolean(process.env.SUPABASE_STORAGE_BUCKET),
-        SENTRY_DSN: Boolean(process.env.SENTRY_DSN)
-      }
+      checks: environmentChecks()
     });
   } catch (error) {
     next(error);
