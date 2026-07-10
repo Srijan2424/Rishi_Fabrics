@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "dev:mock": "tsx watch src/mock-server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "verify:phase1": "node scripts/verify-phase1-architecture.mjs",
     "test:inventory": "tsx scripts/inventory-smoke-test.ts",
     "test:inventory:negative": "tsx scripts/inventory-negative-test.ts",
