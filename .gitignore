@@ -13,7 +13,7 @@ coverage/
 
 # Generated/runtime files
 .generated/
-uploads/
+/uploads/
 tmp/
 temp/
 
