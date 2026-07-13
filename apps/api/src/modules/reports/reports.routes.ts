@@ -41,6 +41,18 @@ function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
 }
 
+function extractDailyProductionUpdates(notes: string | null | undefined) {
+  const marker = "Daily production updates:";
+  const text = String(notes ?? "");
+  const index = text.indexOf(marker);
+  if (index === -1) return [];
+  return text
+    .slice(index + marker.length)
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function isFabricComplete(row: { status: string | null; fabricSentForDyeingKg: number; inhouseAfterDyeingKg: number }) {
   const status = String(row.status ?? "").toUpperCase();
   return status.includes("COMPLETE") || status.includes("DONE") || status.includes("RECEIVED") || status.includes("INHOUSE") || status.includes("IN-HOUSE") || (row.fabricSentForDyeingKg > 0 && row.inhouseAfterDyeingKg >= row.fabricSentForDyeingKg);
@@ -151,6 +163,15 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
 
   const stageProgress = groupStageProgress(progressReports);
   const pipelineProgress = groupPipelineProgress(progressReports);
+  const allDailyProductionRows = orders.flatMap((order) => order.orderLines.map((line) => ({
+    orderNumber: order.orderNumber,
+    deliveryDate: order.deliveryDate,
+    status: order.status,
+    currentStageCode: order.currentStageCode,
+    updateAlerts: extractDailyProductionUpdates(line.notes),
+    ...line
+  })));
+  const dailyProductionUpdateRows = allDailyProductionRows.filter((row) => row.updateAlerts.length > 0);
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -177,6 +198,7 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
       uploadsThisWeek: weeklyUploads.length,
       acceptedRows,
       rejectedRows,
+      dailyProductionUpdateAlerts: dailyProductionUpdateRows.length,
       averageOrderProgress: average(progressReports.map((report) => report.overallProgressPercent))
     },
     template: [
@@ -224,10 +246,13 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
         uploadsThisWeek: weeklyUploads.length,
         acceptedRows,
         rejectedRows,
-        filesNeedingCorrection: weeklyUploads.filter((upload) => upload.rowsRejected > 0)
+        dailyProductionUpdateAlerts: dailyProductionUpdateRows.length,
+        filesNeedingCorrection: weeklyUploads.filter((upload) => upload.rowsRejected > 0),
+        dailyProductionUpdates: dailyProductionUpdateRows.slice(0, 50)
       },
       productionStatus,
-      dailyProduction: orders.flatMap((order) => order.orderLines.map((line) => ({ orderNumber: order.orderNumber, deliveryDate: order.deliveryDate, status: order.status, currentStageCode: order.currentStageCode, ...line }))).slice(0, 120),
+      dailyProduction: allDailyProductionRows.slice(0, 120),
+      dailyProductionUpdates: dailyProductionUpdateRows.slice(0, 50),
       fabricStatus: pendingFabricRows.slice(0, 100),
       wipStatus: weeklyWipRows.slice(0, 100),
       samplingStatus: techPackStyles.slice(0, 100),

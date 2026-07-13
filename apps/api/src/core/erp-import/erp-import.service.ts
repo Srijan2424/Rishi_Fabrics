@@ -540,8 +540,53 @@ export class ErpImportService {
     };
   }
 
+  private normalizeDailyProductionInteger(input: {
+    label: string;
+    rawValue: string;
+    fallback: number;
+    allowNegative?: boolean;
+    updates: string[];
+  }) {
+    const rawValue = input.rawValue.trim();
+    if (!rawValue) return input.fallback;
+
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+      input.updates.push(`${input.label} was not a valid number (${rawValue}); used ${input.fallback}.`);
+      return input.fallback;
+    }
+
+    const integerValue = Number.isInteger(parsed) ? parsed : Math.round(parsed);
+    if (!Number.isInteger(parsed)) {
+      input.updates.push(`${input.label} was not an integer (${rawValue}); rounded to ${integerValue}.`);
+    }
+
+    if (!input.allowNegative && integerValue < 0) {
+      input.updates.push(`${input.label} was negative (${integerValue}); used 0.`);
+      return 0;
+    }
+
+    if (input.allowNegative && integerValue < 0) {
+      input.updates.push(`${input.label} is negative (${integerValue}); treated as a balance/shortage signal.`);
+    }
+
+    return integerValue;
+  }
+
+  private buildDailyProductionNotes(rawNotes: string, updates: string[]) {
+    let notes = rawNotes.trim();
+    if (notes.length > 500) {
+      updates.push("notes exceeded 500 characters and were trimmed.");
+      notes = notes.slice(0, 500);
+    }
+
+    const updateText = updates.length > 0 ? `Daily production updates: ${updates.join("; ")}` : "";
+    return [notes, updateText].filter(Boolean).join(notes && updateText ? " | " : "") || undefined;
+  }
+
   private validateDailyProductionRow(rowNumber: number, row: Record<string, string>) {
     const errors: string[] = [];
+    const updates: string[] = [];
     const buyerName = this.getRowValue(row, "buyerName");
     const styleName = this.getRowValue(row, "styleName");
     const colorName = this.getRowValue(row, "colorName");
@@ -549,29 +594,41 @@ export class ErpImportService {
     const productionStatus = this.getRowValue(row, "productionStatus");
     const rowColorHex = this.getRowValue(row, "rowColorHex");
     const orderQuantity = Number(this.getRowValue(row, "orderQuantity") || 0);
-    const cuttingTotalQuantity = Number(this.getRowValue(row, "cuttingTotalQuantity") || 0);
-    const cuttingToLineBalanceQuantity = Number(this.getRowValue(row, "cuttingToLineBalanceQuantity") || 0);
-    const lineLoadingQuantity = Number(this.getRowValue(row, "lineLoadingQuantity") || 0);
-    const todayLineOutQuantity = Number(this.getRowValue(row, "todayLineOutQuantity") || 0);
-    const totalLineOutQuantity = Number(this.getRowValue(row, "totalLineOutQuantity") || 0);
-    const lineInBalanceQuantity = Number(this.getRowValue(row, "lineInBalanceQuantity") || 0);
-    const rawCompletedQuantity = this.getRowValue(row, "completedQuantity");
-    const completedQuantityFromInput = rawCompletedQuantity ? Number(rawCompletedQuantity) : null;
-    const rejectedQuantity = Number(this.getRowValue(row, "rejectedQuantity") || 0);
-    const reworkQuantity = Number(this.getRowValue(row, "reworkQuantity") || 0);
-    const updateDate = this.getRowValue(row, "updateDate") ? new Date(this.getRowValue(row, "updateDate")) : new Date();
+
+    const cuttingTotalQuantity = this.normalizeDailyProductionInteger({ label: "cuttingTotalQuantity", rawValue: this.getRowValue(row, "cuttingTotalQuantity"), fallback: 0, updates });
+    const cuttingToLineBalanceQuantity = this.normalizeDailyProductionInteger({ label: "cuttingToLineBalanceQuantity", rawValue: this.getRowValue(row, "cuttingToLineBalanceQuantity"), fallback: 0, allowNegative: true, updates });
+    const lineLoadingQuantity = this.normalizeDailyProductionInteger({ label: "lineLoadingQuantity", rawValue: this.getRowValue(row, "lineLoadingQuantity"), fallback: 0, updates });
+    const todayLineOutQuantity = this.normalizeDailyProductionInteger({ label: "todayLineOutQuantity", rawValue: this.getRowValue(row, "todayLineOutQuantity"), fallback: 0, updates });
+    const totalLineOutQuantity = this.normalizeDailyProductionInteger({ label: "totalLineOutQuantity", rawValue: this.getRowValue(row, "totalLineOutQuantity"), fallback: 0, updates });
+    const lineInBalanceQuantity = this.normalizeDailyProductionInteger({ label: "lineInBalanceQuantity", rawValue: this.getRowValue(row, "lineInBalanceQuantity"), fallback: 0, allowNegative: true, updates });
+    const rejectedQuantity = this.normalizeDailyProductionInteger({ label: "rejectedQuantity", rawValue: this.getRowValue(row, "rejectedQuantity"), fallback: 0, updates });
+    const reworkQuantity = this.normalizeDailyProductionInteger({ label: "reworkQuantity", rawValue: this.getRowValue(row, "reworkQuantity"), fallback: 0, updates });
+
+    const completedFallback = this.inferCompletedQuantity({
+      completedQuantity: null,
+      totalLineOutQuantity,
+      lineLoadingQuantity,
+      cuttingTotalQuantity
+    });
+    const completedQuantity = this.normalizeDailyProductionInteger({
+      label: "completedQuantity",
+      rawValue: this.getRowValue(row, "completedQuantity"),
+      fallback: completedFallback,
+      updates
+    });
+
+    let updateDate = this.getRowValue(row, "updateDate") ? new Date(this.getRowValue(row, "updateDate")) : new Date();
+    if (Number.isNaN(updateDate.getTime())) {
+      updates.push(`updateDate was invalid (${this.getRowValue(row, "updateDate")}); upload time used.`);
+      updateDate = new Date();
+    }
+
     const stageCode = this.inferStageCode({
       stageCode: this.getRowValue(row, "stageCode"),
       totalLineOutQuantity,
       lineLoadingQuantity,
       cuttingTotalQuantity,
       productionStatus
-    });
-    const completedQuantity = this.inferCompletedQuantity({
-      completedQuantity: completedQuantityFromInput,
-      totalLineOutQuantity,
-      lineLoadingQuantity,
-      cuttingTotalQuantity
     });
     const orderNumber = this.getRowValue(row, "orderNumber") || this.makeOrderNumberFromDpr({
       buyerName,
@@ -585,17 +642,6 @@ export class ErpImportService {
     if (!colorName) errors.push("colorName/COLOUR is required");
     if (!Number.isInteger(orderQuantity) || orderQuantity <= 0) errors.push("orderQuantity/ORDER QTY. must be a positive integer");
     if (!stageCode) errors.push("stageCode could not be inferred");
-    if (!Number.isInteger(completedQuantity) || completedQuantity < 0) errors.push("completedQuantity must be a non-negative integer");
-    if (!Number.isInteger(cuttingTotalQuantity) || cuttingTotalQuantity < 0) errors.push("cuttingTotalQuantity must be a non-negative integer");
-    if (!Number.isInteger(cuttingToLineBalanceQuantity)) errors.push("cuttingToLineBalanceQuantity must be an integer");
-    if (!Number.isInteger(lineLoadingQuantity) || lineLoadingQuantity < 0) errors.push("lineLoadingQuantity must be a non-negative integer");
-    if (!Number.isInteger(todayLineOutQuantity) || todayLineOutQuantity < 0) errors.push("todayLineOutQuantity must be a non-negative integer");
-    if (!Number.isInteger(totalLineOutQuantity) || totalLineOutQuantity < 0) errors.push("totalLineOutQuantity must be a non-negative integer");
-    if (!Number.isInteger(lineInBalanceQuantity) || lineInBalanceQuantity < 0) errors.push("lineInBalanceQuantity must be a non-negative integer");
-    if (!Number.isInteger(rejectedQuantity) || rejectedQuantity < 0) errors.push("rejectedQuantity must be a non-negative integer");
-    if (!Number.isInteger(reworkQuantity) || reworkQuantity < 0) errors.push("reworkQuantity must be a non-negative integer");
-    if (Number.isNaN(updateDate.getTime())) errors.push("updateDate must be valid");
-    if (this.getRowValue(row, "notes") && this.getRowValue(row, "notes").length > 500) errors.push("notes must be 500 characters or less");
 
     if (errors.length > 0) {
       return {
@@ -630,7 +676,7 @@ export class ErpImportService {
         productionStatus: productionStatus || undefined,
         rowColorHex: rowColorHex ? this.normalizeColorHex(rowColorHex) : undefined,
         updateDate: updateDate.toISOString(),
-        notes: this.getRowValue(row, "notes") || undefined
+        notes: this.buildDailyProductionNotes(this.getRowValue(row, "notes"), updates)
       },
       rejected: null
     };
