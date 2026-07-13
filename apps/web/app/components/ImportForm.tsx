@@ -342,6 +342,7 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [formatReport, setFormatReport] = useState<LocalFormatReport | null>(null);
   const [error, setError] = useState("");
+  const [applyError, setApplyError] = useState("");
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
 
@@ -368,6 +369,7 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
   function resetPreviewState() {
     setPreview(null);
     setError("");
+    setApplyError("");
     setFormatReport(null);
   }
 
@@ -431,6 +433,7 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
     event.preventDefault();
     setSaving(true);
     setError("");
+    setApplyError("");
     setPreview(null);
 
     const localReport = validateLocalFormat({
@@ -514,6 +517,7 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
 
     setApplying(true);
     setError("");
+    setApplyError("");
 
     try {
       const response = await authFetch(`${apiUrl}${applyEndpoint}`, {
@@ -541,19 +545,20 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
       const body = await readResponseBody(response);
 
       if (!response.ok) {
-        setError(body.error ?? `Import apply failed with status ${response.status}`);
+        setApplyError(body.error ?? `Import apply failed with status ${response.status}`);
         return;
       }
 
+      setApplyError("");
       setPreview(null);
       setImportText("");
       setSelectedFile(null);
       router.refresh();
     } catch (error) {
-      setError(
+      setApplyError(
         error instanceof Error
-          ? `Import apply failed: ${error.message}. Make sure the real API is running with npm run dev:api.`
-          : "Import apply failed. Make sure the real API is running."
+          ? `Import apply failed: ${error.message}. Make sure the real API is reachable.`
+          : "Import apply failed. Make sure the real API is reachable."
       );
     } finally {
       setApplying(false);
@@ -831,9 +836,12 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
                 </tbody>
               </table>
               {canApplyPreview ? (
-                <button className="apply-button" type="button" onClick={onApply} disabled={applying}>
-                  {applying ? "Saving..." : importKind === "WIP_REPORT" || importKind === "FABRIC_DYEING" ? `Save ${selectedImportKind.label}` : `Apply ${selectedImportKind.label}`}
-                </button>
+                <div>
+                  <button className="apply-button" type="button" onClick={onApply} disabled={applying}>
+                    {applying ? "Saving..." : importKind === "WIP_REPORT" || importKind === "FABRIC_DYEING" ? `Save ${selectedImportKind.label}` : `Apply ${selectedImportKind.label}`}
+                  </button>
+                  {applyError ? <div className="form-message error">{applyError}</div> : null}
+                </div>
               ) : null}
             </div>
           ) : preview.workbookExtraction ? (
