@@ -1,6 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { ZodError } from "zod";
 import { prisma } from "./db.js";
+import { ImportApplyError, ImportValidationError } from "./core/erp-import/erp-import.errors.js";
+import { InsufficientInventoryError, InvalidInventoryQuantityError, InventoryNotFoundError } from "./core/inventory/inventory.errors.js";
 import { captureError } from "./services/error-tracking.js";
 
 export function asyncRoute(handler: RequestHandler): RequestHandler {
@@ -14,6 +16,19 @@ export function errorHandler(error: unknown, req: Request, res: Response, _next:
     res.status(400).json({
       error: "Validation failed",
       issues: error.issues
+    });
+    return;
+  }
+
+  if (
+    error instanceof ImportApplyError ||
+    error instanceof ImportValidationError ||
+    error instanceof InventoryNotFoundError ||
+    error instanceof InsufficientInventoryError ||
+    error instanceof InvalidInventoryQuantityError
+  ) {
+    res.status(400).json({
+      error: error.message
     });
     return;
   }
