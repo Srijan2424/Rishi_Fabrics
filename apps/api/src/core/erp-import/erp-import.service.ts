@@ -16,7 +16,6 @@ import {
   RejectedImportRow
 } from "./erp-import.types.js";
 import { ImportApplyError } from "./erp-import.errors.js";
-import { InventoryService } from "../inventory/inventory.service.js";
 
 const requiredHeaders = [
   "orderNumber",
@@ -1109,15 +1108,10 @@ export class ErpImportService {
       accepted.productionUnitName = mapping?.productionUnit?.name ?? undefined;
 
       if (order && accepted.completedQuantity < orderStage.completedQuantity) {
-        rejectedRows.push({
-          rowNumber: parsed.rowNumber,
-          row: parsed.row,
-          errors: [
-            `completedQuantity ${accepted.completedQuantity} is lower than current recorded quantity ${orderStage.completedQuantity}`,
-            "Use a correction workflow instead of silently reducing production from an import."
-          ]
-        });
-        continue;
+        accepted.notes = [
+          accepted.notes,
+          `Daily production correction detected: completed quantity reduced from ${orderStage.completedQuantity} to ${accepted.completedQuantity}. This will be highlighted in reports.`
+        ].filter(Boolean).join(" ");
       }
 
       accepted.deliveryDate = (order?.deliveryDate ?? this.getDefaultDailyProductionDeliveryDate()).toISOString();
@@ -1518,12 +1512,6 @@ export class ErpImportService {
           throw new ImportApplyError(`Stage ${row.stageCode} does not exist on order ${row.orderNumber}`);
         }
 
-        if (row.completedQuantity < orderStage.completedQuantity) {
-          throw new ImportApplyError(
-            `completedQuantity ${row.completedQuantity} is lower than current recorded quantity ${orderStage.completedQuantity}`
-          );
-        }
-
         const workflowStage = await tx.workflowStage.findUnique({
           where: {
             id: orderStage.workflowStageId
@@ -1546,28 +1534,26 @@ export class ErpImportService {
         }
 
         const completedDelta = row.completedQuantity - orderStage.completedQuantity;
-        const existingInventory = await tx.stageInventory.findFirst({
+        const quantityCorrectionNote = completedDelta < 0
+          ? `Daily production correction from upload ${input.uploadId}: completed quantity reduced from ${orderStage.completedQuantity} to ${row.completedQuantity} (${Math.abs(completedDelta)} pcs).`
+          : "";
+
+        await tx.stageInventory.upsert({
           where: {
+            orderId_workflowStageId: {
+              orderId: order.id,
+              workflowStageId: orderStage.workflowStageId
+            }
+          },
+          update: {
+            quantity: row.completedQuantity
+          },
+          create: {
             orderId: order.id,
-            workflowStageId: orderStage.workflowStageId
+            workflowStageId: orderStage.workflowStageId,
+            quantity: row.completedQuantity
           }
         });
-        const inventoryDelta = row.completedQuantity - (existingInventory?.quantity ?? 0);
-        const inventory = new InventoryService(tx);
-
-        if (inventoryDelta > 0) {
-          await inventory.addInventory({
-            orderId: order.id,
-            workflowStageId: orderStage.workflowStageId,
-            quantity: inventoryDelta
-          });
-        } else if (inventoryDelta < 0) {
-          await inventory.removeInventory({
-            orderId: order.id,
-            workflowStageId: orderStage.workflowStageId,
-            quantity: Math.abs(inventoryDelta)
-          });
-        }
 
         const updatedStage = await tx.orderStage.update({
           where: {
@@ -1626,15 +1612,19 @@ export class ErpImportService {
           }
         });
 
-        if (completedDelta > 0) {
+        if (completedDelta !== 0) {
+          const movementNote = completedDelta < 0
+            ? [row.notes, quantityCorrectionNote].filter(Boolean).join(" ")
+            : row.notes ?? `Daily production update from upload ${input.uploadId}${mapping?.productionUnit?.name ? ` (${mapping.productionUnit.name})` : ""}`;
+
           await tx.materialMovement.create({
             data: {
               orderId: order.id,
-              fromStageCode: null,
+              fromStageCode: completedDelta < 0 ? row.stageCode : null,
               toStageCode: row.stageCode,
-              quantity: completedDelta,
-              movementType: workflowStage.isDispatchStage ? "DISPATCH" : "FORWARD",
-              notes: row.notes ?? `Daily production update from upload ${input.uploadId}${mapping?.productionUnit?.name ? ` (${mapping.productionUnit.name})` : ""}`
+              quantity: Math.abs(completedDelta),
+              movementType: completedDelta < 0 ? "ROLLBACK" : workflowStage.isDispatchStage ? "DISPATCH" : "FORWARD",
+              notes: movementNote
             }
           });
         }
