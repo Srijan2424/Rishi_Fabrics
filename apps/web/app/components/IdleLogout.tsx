@@ -11,7 +11,7 @@ export function IdleLogout() {
   const router = useRouter();
 
   useEffect(() => {
-    let timeoutId: ReturnType<typeof window.setTimeout>;
+    let timeoutId: number;
 
     async function logoutForInactivity() {
       clearPilotSessionToken();
