@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DemoButton } from "./components/DemoButton";
+import { IdleLogout } from "./components/IdleLogout";
 import { LogoutButton } from "./components/LogoutButton";
 import { getCurrentUser } from "./lib/api";
 import "./styles.css";
@@ -48,6 +49,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </nav>
               <DemoButton />
               <LogoutButton />
+              <IdleLogout />
             </aside>
             <main className="main">{children}</main>
           </div>
