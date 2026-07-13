@@ -12,6 +12,33 @@ reportsRouter.use(requirePermission("VIEW_REPORTS"));
 const progressService = new ProgressService();
 const delayService = new DelayService();
 
+async function resolveMdReportRecipients(factoryId?: string) {
+  const managingUsers = await prisma.user.findMany({
+    where: {
+      role: "CEO",
+      status: "ACTIVE",
+      isActive: true,
+      ...(factoryId ? { factoryId } : {})
+    },
+    select: {
+      email: true
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+
+  const roleEmails = managingUsers.map((user) => user.email).filter(Boolean);
+  if (roleEmails.length > 0) return Array.from(new Set(roleEmails));
+
+  return Array.from(new Set(
+    String(process.env.MD_REPORT_EMAIL || process.env.ADMIN_ALERT_EMAIL || "")
+      .split(",")
+      .map((email) => email.trim())
+      .filter(Boolean)
+  ));
+}
+
 reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) => {
   const expectedSecret = process.env.REPORT_CRON_SECRET;
   const providedSecret = String(req.headers["x-report-secret"] ?? req.query.secret ?? "");
@@ -33,7 +60,7 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
   });
   const latestUploadDayStart = latestDailyProductionUpload ? dayStart(latestDailyProductionUpload.createdAt) : since;
 
-  const [orders, missingRows, updateMovements, uploads] = await Promise.all([
+  const [orders, missingRows, updateMovements, uploads, fabricRowsToday, wipRowsToday, samplingStylesToday] = await Promise.all([
     prisma.order.findMany({ where, include: { orderLines: true }, orderBy: { updatedAt: "desc" }, take: 500 }),
     prisma.orderLine.findMany({
       where: {
@@ -58,14 +85,40 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
         : { createdAt: { gte: since } },
       orderBy: { createdAt: "desc" },
       take: 50
+    }),
+    prisma.fabricDyeingSnapshot.findMany({
+      where: factoryId
+        ? { factoryId, createdAt: { gte: since } }
+        : { createdAt: { gte: since } },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    }),
+    prisma.wipSnapshot.findMany({
+      where: factoryId
+        ? { factoryId, createdAt: { gte: since } }
+        : { createdAt: { gte: since } },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    }),
+    prisma.techPackStyle.findMany({
+      where: factoryId
+        ? { factoryId, createdAt: { gte: since } }
+        : { createdAt: { gte: since } },
+      orderBy: { createdAt: "desc" },
+      take: 100
     })
   ]);
 
-  const to = process.env.MD_REPORT_EMAIL || process.env.ADMIN_ALERT_EMAIL;
-  if (!to) {
-    res.status(400).json({ error: "MD_REPORT_EMAIL or ADMIN_ALERT_EMAIL must be configured" });
+  const recipients = await resolveMdReportRecipients(factoryId || undefined);
+  if (recipients.length === 0) {
+    res.status(400).json({ error: "No active CEO users found and MD_REPORT_EMAIL/ADMIN_ALERT_EMAIL is not configured" });
     return;
   }
+
+  const dailyProductionCorrections = updateMovements.filter((movement) => (
+    movement.movementType === "ROLLBACK" ||
+    String(movement.notes ?? "").includes("Daily production correction")
+  ));
 
   const reportLines = [
     `Rishi Fabrics Daily Production Report - ${formatDate(today)}`,
@@ -73,8 +126,14 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
     `Latest daily production upload: ${latestDailyProductionUpload?.fileName ?? "No applied upload found"}`,
     `Running orders: ${orders.filter((order) => order.status === "RUNNING").length}`,
     `Rows updated today: ${updateMovements.length}`,
+    `Reduced/corrected quantities today: ${dailyProductionCorrections.length}`,
     `Uploads today: ${uploads.length}`,
     `Rows missing from latest daily production sheet: ${missingRows.length}`,
+    "",
+    "Module summary:",
+    `- WIP rows uploaded today: ${wipRowsToday.length}`,
+    `- Fabric/dyeing rows uploaded today: ${fabricRowsToday.length}`,
+    `- Sampling styles uploaded today: ${samplingStylesToday.length}`,
     "",
     "Styles/orders missing from latest daily production sheet:",
     ...(missingRows.length > 0
@@ -87,11 +146,18 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
           .filter((movement) => extractDailyProductionUpdates(movement.notes).length > 0)
           .slice(0, 30)
           .map((movement) => `- ${movement.order.orderNumber}: ${extractDailyProductionUpdates(movement.notes).join("; ")}`)
+      : ["- None"]),
+    "",
+    "Reduced/corrected quantities:",
+    ...(dailyProductionCorrections.length > 0
+      ? dailyProductionCorrections
+          .slice(0, 30)
+          .map((movement) => `- ${movement.order.orderNumber}: ${movement.quantity} pcs corrected at ${movement.toStageCode ?? movement.fromStageCode ?? "stage"}; ${movement.notes ?? "No note"}`)
       : ["- None"])
   ];
 
   const result = await sendEmail({
-    to,
+    to: recipients,
     subject: `Rishi Fabrics Daily Production Report - ${formatDate(today)}`,
     text: reportLines.join("\n")
   });
@@ -103,7 +169,7 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
 
   res.json({
     ok: true,
-    sentTo: to,
+    sentTo: recipients,
     missingRows: missingRows.length,
     rowsUpdatedToday: updateMovements.length,
     uploadsToday: uploads.length
@@ -211,7 +277,7 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
   const weekEnd = endOfWeek(weekStart);
   const weekWhere = factoryId ? { factoryId, createdAt: { gte: weekStart, lte: weekEnd } } : { createdAt: { gte: weekStart, lte: weekEnd } };
 
-  const [orders, uploads, weeklyUploads, fabricRows, weeklyFabricRows, wipRows, weeklyWipRows, techPackStyles, weeklyTechPackStyles] = await Promise.all([
+  const [orders, uploads, weeklyUploads, fabricRows, weeklyFabricRows, wipRows, weeklyWipRows, techPackStyles, weeklyTechPackStyles, weeklyDailyProductionMovements] = await Promise.all([
     prisma.order.findMany({ where, include: { stages: true, samplingApprovals: true, orderLines: true }, orderBy: { updatedAt: "desc" }, take: 500 }),
     prisma.upload.findMany({ where, orderBy: { createdAt: "desc" }, take: 200 }),
     prisma.upload.findMany({ where: weekWhere, orderBy: { createdAt: "desc" }, take: 200 }),
@@ -220,7 +286,15 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
     prisma.wipSnapshot.findMany({ where, orderBy: { createdAt: "desc" }, take: 500 }),
     prisma.wipSnapshot.findMany({ where: weekWhere, orderBy: { createdAt: "desc" }, take: 500 }),
     prisma.techPackStyle.findMany({ where, orderBy: { createdAt: "desc" }, take: 500 }),
-    prisma.techPackStyle.findMany({ where: weekWhere, orderBy: { createdAt: "desc" }, take: 500 })
+    prisma.techPackStyle.findMany({ where: weekWhere, orderBy: { createdAt: "desc" }, take: 500 }),
+    prisma.materialMovement.findMany({
+      where: factoryId
+        ? { createdAt: { gte: weekStart, lte: weekEnd }, order: { factoryId } }
+        : { createdAt: { gte: weekStart, lte: weekEnd } },
+      include: { order: true },
+      orderBy: { createdAt: "desc" },
+      take: 500
+    })
   ]);
 
   const progressReports = await Promise.all(orders.map((order) => progressService.getOrderProgress(order.id)));
@@ -274,13 +348,41 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
 
   const stageProgress = groupStageProgress(progressReports);
   const pipelineProgress = groupPipelineProgress(progressReports);
+  const updateAlertsByOrderId = new Map<string, string[]>();
+  const quantityCorrections = weeklyDailyProductionMovements
+    .filter((movement) => movement.movementType === "ROLLBACK" || String(movement.notes ?? "").includes("Daily production correction"))
+    .map((movement) => ({
+      id: movement.id,
+      orderId: movement.orderId,
+      orderNumber: movement.order.orderNumber,
+      stageCode: movement.toStageCode ?? movement.fromStageCode,
+      quantity: movement.quantity,
+      notes: movement.notes,
+      createdAt: movement.createdAt
+    }));
+
+  for (const movement of weeklyDailyProductionMovements) {
+    const alerts = [
+      ...extractDailyProductionUpdates(movement.notes),
+      ...(movement.movementType === "ROLLBACK" || String(movement.notes ?? "").includes("Daily production correction")
+        ? [`Corrected/reduced quantity: ${movement.quantity} pcs at ${movement.toStageCode ?? movement.fromStageCode ?? "stage"}`]
+        : [])
+    ];
+    if (alerts.length > 0) {
+      updateAlertsByOrderId.set(movement.orderId, [
+        ...(updateAlertsByOrderId.get(movement.orderId) ?? []),
+        ...alerts
+      ]);
+    }
+  }
+
   const allDailyProductionRows = orders.flatMap((order) => order.orderLines.map((line) => ({
     orderNumber: order.orderNumber,
     deliveryDate: order.deliveryDate,
     status: order.status,
     currentStageCode: order.currentStageCode,
     notReportedInLatestDailyProduction: Boolean(latestDailyProductionDayStart && line.lastUpdatedAt < latestDailyProductionDayStart && order.status !== "DISPATCHED"),
-    updateAlerts: [] as string[],
+    updateAlerts: updateAlertsByOrderId.get(order.id) ?? [],
     ...line
   })));
   const rowsMissingFromLatestDailyProduction = allDailyProductionRows.filter((row) => row.notReportedInLatestDailyProduction);
@@ -312,6 +414,7 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
       acceptedRows,
       rejectedRows,
       dailyProductionUpdateAlerts: dailyProductionUpdateRows.length,
+      reducedOrCorrectedQuantities: quantityCorrections.length,
       rowsMissingFromLatestDailyProduction: rowsMissingFromLatestDailyProduction.length,
       averageOrderProgress: average(progressReports.map((report) => report.overallProgressPercent))
     },
@@ -363,13 +466,16 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
         acceptedRows,
         rejectedRows,
         dailyProductionUpdateAlerts: dailyProductionUpdateRows.length,
+        reducedOrCorrectedQuantities: quantityCorrections.length,
         filesNeedingCorrection: weeklyUploads.filter((upload) => upload.rowsRejected > 0),
         dailyProductionUpdates: dailyProductionUpdateRows.slice(0, 50),
+        quantityCorrections: quantityCorrections.slice(0, 50),
         missingFromLatestDailyProduction: rowsMissingFromLatestDailyProduction.slice(0, 50)
       },
       productionStatus,
       dailyProduction: allDailyProductionRows.slice(0, 120),
       dailyProductionUpdates: dailyProductionUpdateRows.slice(0, 50),
+      quantityCorrections: quantityCorrections.slice(0, 50),
       fabricStatus: pendingFabricRows.slice(0, 100),
       wipStatus: weeklyWipRows.slice(0, 100),
       samplingStatus: techPackStyles.slice(0, 100),
