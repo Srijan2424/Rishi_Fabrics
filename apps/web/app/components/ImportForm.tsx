@@ -562,12 +562,11 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
 
   const acceptedRows = preview?.acceptedRows ?? [];
   const rejectedRows = preview?.rejectedRows ?? [];
-  const dailyProductionMissingDeliveryDate = importKind === "DAILY_PRODUCTION" && acceptedRows.some((row) => !row.deliveryDate);
+  const dailyProductionMissingDeliveryDate = false;
   const canApplyPreview = Boolean(
     applyEndpointByKind[importKind] &&
     rejectedRows.length === 0 &&
     acceptedRows.length > 0 &&
-    !dailyProductionMissingDeliveryDate &&
     (preview?.uploadId || importKind === "WIP_REPORT" || importKind === "FABRIC_DYEING")
   );
   const previewColumns = requiredColumns[importKind].filter((column) => column !== "workflowTemplateId");
@@ -794,9 +793,9 @@ export function ImportForm({ defaultFactory, workflows }: { defaultFactory?: Fac
           ) : acceptedRows.length > 0 ? (
             <div>
               <strong>Accepted Rows</strong>
-              {dailyProductionMissingDeliveryDate ? (
-                <div className="form-message error">
-                  Add delivery dates for every daily production row before applying. New rows will create orders; existing rows can update delivery dates.
+              {importKind === "DAILY_PRODUCTION" ? (
+                <div className="form-message success">
+                  New orders can be applied now. If a delivery date is not edited here, the system uses a 60 day default and the order date can be edited later.
                 </div>
               ) : null}
               <table className="table">

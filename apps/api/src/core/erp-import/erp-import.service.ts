@@ -723,6 +723,12 @@ export class ErpImportService {
     });
   }
 
+  private getDefaultDailyProductionDeliveryDate() {
+    const date = new Date();
+    date.setDate(date.getDate() + 60);
+    return date;
+  }
+
   private async getDefaultWorkflowTemplate(factoryId: string, db: any = this.db) {
     return db.workflowTemplate.findFirst({
       where: {
@@ -1114,10 +1120,16 @@ export class ErpImportService {
         continue;
       }
 
-      accepted.deliveryDate = order?.deliveryDate?.toISOString();
+      accepted.deliveryDate = (order?.deliveryDate ?? this.getDefaultDailyProductionDeliveryDate()).toISOString();
       accepted.orderExists = Boolean(order);
-      accepted.requiresDeliveryDate = !order;
+      accepted.requiresDeliveryDate = false;
       accepted.orderAction = order ? "UPDATE" : "CREATE";
+      if (!order) {
+        accepted.notes = [
+          accepted.notes,
+          "New order detected. Delivery date defaulted to 60 days from upload and can be edited later."
+        ].filter(Boolean).join(" ");
+      }
 
       acceptedRows.push(accepted);
     }
@@ -1433,11 +1445,9 @@ export class ErpImportService {
         });
 
         if (!order) {
-          if (!row.deliveryDate) {
-            throw new ImportApplyError(`Delivery date is required before creating order ${row.orderNumber}`);
-          }
-
-          const deliveryDate = new Date(row.deliveryDate);
+          const deliveryDate = row.deliveryDate
+            ? new Date(row.deliveryDate)
+            : this.getDefaultDailyProductionDeliveryDate();
 
           if (Number.isNaN(deliveryDate.getTime())) {
             throw new ImportApplyError(`Invalid delivery date for order ${row.orderNumber}`);
