@@ -99,6 +99,7 @@ app.get("/health/deep", async (_req, res, next) => {
 });
 
 app.use("/auth", authRouter);
+app.use("/reports", reportsRouter);
 app.use(requireAuthenticated);
 app.use(
   "/tech-pack-previews",
@@ -120,7 +121,6 @@ app.use("/dashboard", dashboardRouter);
 app.use("/monitoring", monitoringRouter);
 app.use("/issues", issuesRouter);
 app.use("/work-logs", workLogsRouter);
-app.use("/reports", reportsRouter);
 app.use("/demo-guides", demoGuidesRouter);
 app.use(errorHandler);
 
