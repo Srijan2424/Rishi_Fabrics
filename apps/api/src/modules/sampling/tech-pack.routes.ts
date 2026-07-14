@@ -83,6 +83,20 @@ const samplingCheckpoints = [
     evidence: "Sealer garment approval"
   },
   {
+    checkpointCode: "FPT",
+    label: "FPT",
+    owner: "Merchant / Quality",
+    timeframe: "Before bulk production",
+    evidence: "FPT approval status or report reference"
+  },
+  {
+    checkpointCode: "GPT",
+    label: "GPT",
+    owner: "Merchant / Quality",
+    timeframe: "Before shipment approval",
+    evidence: "GPT approval status or report reference"
+  },
+  {
     checkpointCode: "SIZE_SET_APPROVAL",
     label: "Size Set Approval",
     owner: "Merchant / Buyer",

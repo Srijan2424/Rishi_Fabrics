@@ -58,6 +58,8 @@ const defaultApprovals: SamplingApproval[] = [
   ["TRIMS_CARD", "Trims Card with Trims"],
   ["PP_COMMENTS", "P.P Comments from Buyer Side"],
   ["PP_SEALER_GARMENT", "PP Sealer Garment"],
+  ["FPT", "FPT"],
+  ["GPT", "GPT"],
   ["SIZE_SET_APPROVAL", "Size Set Approval"]
 ].map(([checkpointCode, label]) => ({
   id: checkpointCode,
