@@ -142,9 +142,29 @@ function looksLikeStyleNumber(value: string) {
   return true;
 }
 
+function looksLikeFilenameStyleNumber(value: string) {
+  const cleaned = cleanStyleNumber(value);
+  if (cleaned.length < 6 || cleaned.length > 80) return false;
+  if (!/[A-Z]/.test(cleaned) || !/\d/.test(cleaned)) return false;
+  if (/^(TECHPACK|TECH-PACK|TECKPACK|TECK-PACK|SAMPLE|PROD|PRODUCTION)$/i.test(cleaned)) return false;
+  return /^[A-Z]{1,10}\d{2,4}[A-Z0-9-]{2,}$/i.test(cleaned) || looksLikeStyleNumber(cleaned);
+}
+
+function extractStyleNumberFromFileName(fileName: string) {
+  const parsed = path.parse(fileName);
+  const baseName = parsed.name.replace(/[\u2010-\u2015_\s]+/g, "-");
+  const candidates = [
+    baseName,
+    ...(baseName.match(/[A-Z]{1,10}\d{2,4}[A-Z0-9-]{2,}/gi) ?? []),
+    ...(baseName.match(/[A-Z0-9]+(?:[-_\s]+[A-Z0-9]+){1,}/gi) ?? [])
+  ].map(cleanStyleNumber);
+
+  return candidates.find(looksLikeFilenameStyleNumber) ?? "";
+}
+
 function extractStyleNumber(text: string, fileName: string) {
   return extractStyleMatches(text)[0]?.styleNumber ||
-    cleanStyleNumber(fileName.match(/[A-Z0-9]+(?:[-_\s]+[A-Z0-9]+){2,}/i)?.[0] ?? "") ||
+    extractStyleNumberFromFileName(fileName) ||
     "";
 }
 
@@ -468,7 +488,7 @@ techPackRouter.get(
 techPackRouter.post(
   "/upload",
   requirePermission("MANAGE_SAMPLING"),
-  upload.array("files", 20),
+  upload.array("files", maxTechPackFiles),
   asyncRoute(async (req, res) => {
     const factoryId = String(req.body.factoryId ?? req.authUser?.factoryId ?? "");
     const files = (req.files ?? []) as Express.Multer.File[];
