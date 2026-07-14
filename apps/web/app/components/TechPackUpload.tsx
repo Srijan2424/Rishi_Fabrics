@@ -4,8 +4,8 @@ import { ChangeEvent, useEffect, useState } from "react";
 import { ReportIssueButton } from "./ReportIssueButton";
 import { authFetch, clientApiUrl } from "../lib/client-api";
 
-const maxTechPackFileBytes = 30 * 1024 * 1024;
-const maxTechPackBatchBytes = 60 * 1024 * 1024;
+const maxTechPackFileBytes = 100 * 1024 * 1024;
+const maxTechPackBatchBytes = 200 * 1024 * 1024;
 
 function formatFileSize(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
@@ -63,7 +63,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
         oversizedFile.name +
           " is " +
           formatFileSize(oversizedFile.size) +
-          ". Tech pack PDFs can be up to 30 MB each. Compress this PDF or upload a smaller version."
+          ". Tech pack PDFs can be up to 100 MB each. Compress this PDF or upload a smaller version."
       );
       event.target.value = "";
       return;
@@ -75,7 +75,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
       setError(
         "The selected tech packs are " +
           formatFileSize(totalSize) +
-          " together. Upload them in smaller batches of about 60 MB or less."
+          " together. Upload them in smaller batches of about 200 MB or less."
       );
       event.target.value = "";
       return;
@@ -97,14 +97,14 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
         oversizedFile.name +
           " is " +
           formatFileSize(oversizedFile.size) +
-          ". Tech pack PDFs can be up to 30 MB each. Compress this PDF or upload a smaller version."
+          ". Tech pack PDFs can be up to 100 MB each. Compress this PDF or upload a smaller version."
       );
       return;
     }
 
     const totalSize = files.reduce((sum, file) => sum + file.size, 0);
     if (totalSize > maxTechPackBatchBytes) {
-      setError("Upload these tech packs in smaller batches of about 60 MB or less.");
+      setError("Upload these tech packs in smaller batches of about 200 MB or less.");
       return;
     }
 

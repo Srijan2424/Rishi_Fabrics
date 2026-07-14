@@ -13,7 +13,7 @@ import { getObject, uploadObject } from "../../services/storage.js";
 import { recordWorkLog } from "../work-logs/work-log.service.js";
 
 export const techPackRouter = Router();
-const maxTechPackFileSizeMb = Number(process.env.TECH_PACK_MAX_FILE_MB ?? 30);
+const maxTechPackFileSizeMb = Number(process.env.TECH_PACK_MAX_FILE_MB ?? 100);
 const maxTechPackFiles = Number(process.env.TECH_PACK_MAX_FILES ?? 20);
 const upload = multer({
   storage: multer.memoryStorage(),

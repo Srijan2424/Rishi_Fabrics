@@ -32,20 +32,12 @@ const samplingStageCodes = new Set([
 
 async function main() {
   const orders = await prisma.order.findMany({
-    where: {
-      status: {
-        not: "CANCELLED"
-      }
-    },
-    select: {
-      id: true,
-      orderNumber: true,
-      currentStageCode: true
-    }
+    where: { status: { not: "CANCELLED" } },
+    select: { id: true, orderNumber: true, currentStageCode: true }
   });
 
   const samplingOrders = orders.filter((order) => samplingStageCodes.has(order.currentStageCode ?? ""));
-  let inserted = 0;
+  let upserts = 0;
 
   for (const order of samplingOrders) {
     for (const checkpoint of checkpoints) {
@@ -57,17 +49,14 @@ async function main() {
           }
         },
         update: {},
-        create: {
-          orderId: order.id,
-          ...checkpoint
-        }
+        create: { orderId: order.id, ...checkpoint }
       });
-      inserted += 1;
+      upserts += 1;
     }
   }
 
   console.log("Ensured FPT/GPT checkpoints for " + samplingOrders.length + " sampling order(s).");
-  console.log("Upsert operations: " + inserted);
+  console.log("Upsert operations: " + upserts);
 }
 
 main()
