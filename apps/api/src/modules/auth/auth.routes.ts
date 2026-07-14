@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword } from "../../security/password.js";
 import { createOtpAuthUrl, createTotpSecret, verifyTotp } from "../../security/totp.js";
 import { createOpaqueToken, hashToken } from "../../security/tokens.js";
 import { getPermissions, requireAuthenticated, sessionCookieName, sessionTokenFromRequest } from "../../security/rbac.js";
+import { sendEmail } from "../../services/email.js";
 
 export const authRouter = Router();
 
@@ -261,6 +262,28 @@ authRouter.post("/password-reset/request", asyncRoute(async (req, res) => {
         expiresAt: new Date(Date.now() + 30 * 60 * 1000)
       }
     });
+
+    const webOrigin = process.env.WEB_ORIGIN || process.env.CORS_ORIGIN || "http://localhost:3000";
+    const resetUrl = `${webOrigin.replace(/\/$/, "")}/password-reset?token=${encodeURIComponent(token)}`;
+    const emailResult = await sendEmail({
+      to: user.email,
+      subject: "Rishi Fabrics password reset",
+      text: [
+        "A password reset was requested for your Rishi Fabrics account.",
+        "",
+        "Open this link to reset your password:",
+        resetUrl,
+        "",
+        "Reset token:",
+        token,
+        "",
+        "This token expires in 30 minutes. If you did not request this, ignore this email."
+      ].join("\n")
+    });
+
+    if (!emailResult.ok) {
+      console.info(`[password-reset] Email not sent for ${user.email}: ${emailResult.error ?? "unknown error"}`);
+    }
   }
 
   res.json({
