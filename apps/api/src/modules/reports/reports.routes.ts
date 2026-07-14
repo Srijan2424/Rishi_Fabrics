@@ -7,7 +7,6 @@ import { ProgressService } from "../../core/progress/progress.service.js";
 import { sendEmail } from "../../services/email.js";
 
 export const reportsRouter = Router();
-reportsRouter.use(requirePermission("VIEW_REPORTS"));
 
 const progressService = new ProgressService();
 const delayService = new DelayService();
@@ -43,6 +42,11 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
   const expectedSecret = process.env.REPORT_CRON_SECRET;
   const providedSecret = String(req.headers["x-report-secret"] ?? req.query.secret ?? "");
 
+  if (process.env.NODE_ENV === "production" && !expectedSecret) {
+    res.status(500).json({ error: "REPORT_CRON_SECRET is not configured" });
+    return;
+  }
+
   if (expectedSecret && providedSecret !== expectedSecret) {
     res.status(401).json({ error: "Invalid report secret" });
     return;
@@ -51,14 +55,14 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
   const factoryId = String(req.query.factoryId ?? req.body?.factoryId ?? "");
   const where = factoryId ? { factoryId } : undefined;
   const today = new Date();
-  const since = dayStart(today);
+  const { start: since, end: until } = indiaDayRange(today);
   const latestDailyProductionUpload = await prisma.upload.findFirst({
     where: factoryId
       ? { factoryId, sourceType: { startsWith: "DAILY_PRODUCTION" }, status: "APPLIED" }
       : { sourceType: { startsWith: "DAILY_PRODUCTION" }, status: "APPLIED" },
     orderBy: { createdAt: "desc" }
   });
-  const latestUploadDayStart = latestDailyProductionUpload ? dayStart(latestDailyProductionUpload.createdAt) : since;
+  const latestUploadDayStart = latestDailyProductionUpload ? indiaDayRange(latestDailyProductionUpload.createdAt).start : since;
 
   const [orders, missingRows, updateMovements, uploads, fabricRowsToday, wipRowsToday, samplingStylesToday] = await Promise.all([
     prisma.order.findMany({ where, include: { orderLines: true }, orderBy: { updatedAt: "desc" }, take: 500 }),
@@ -73,37 +77,37 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
     }),
     prisma.materialMovement.findMany({
       where: factoryId
-        ? { createdAt: { gte: since }, order: { factoryId } }
-        : { createdAt: { gte: since } },
+        ? { createdAt: { gte: since, lte: until }, order: { factoryId } }
+        : { createdAt: { gte: since, lte: until } },
       include: { order: true },
       orderBy: { createdAt: "desc" },
       take: 100
     }),
     prisma.upload.findMany({
       where: factoryId
-        ? { factoryId, createdAt: { gte: since } }
-        : { createdAt: { gte: since } },
+        ? { factoryId, createdAt: { gte: since, lte: until } }
+        : { createdAt: { gte: since, lte: until } },
       orderBy: { createdAt: "desc" },
       take: 50
     }),
     prisma.fabricDyeingSnapshot.findMany({
       where: factoryId
-        ? { factoryId, createdAt: { gte: since } }
-        : { createdAt: { gte: since } },
+        ? { factoryId, createdAt: { gte: since, lte: until } }
+        : { createdAt: { gte: since, lte: until } },
       orderBy: { createdAt: "desc" },
       take: 100
     }),
     prisma.wipSnapshot.findMany({
       where: factoryId
-        ? { factoryId, createdAt: { gte: since } }
-        : { createdAt: { gte: since } },
+        ? { factoryId, createdAt: { gte: since, lte: until } }
+        : { createdAt: { gte: since, lte: until } },
       orderBy: { createdAt: "desc" },
       take: 100
     }),
     prisma.techPackStyle.findMany({
       where: factoryId
-        ? { factoryId, createdAt: { gte: since } }
-        : { createdAt: { gte: since } },
+        ? { factoryId, createdAt: { gte: since, lte: until } }
+        : { createdAt: { gte: since, lte: until } },
       orderBy: { createdAt: "desc" },
       take: 100
     })
@@ -128,6 +132,12 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
     `Rows updated today: ${updateMovements.length}`,
     `Reduced/corrected quantities today: ${dailyProductionCorrections.length}`,
     `Uploads today: ${uploads.length}`,
+    ...(uploads.length === 0
+      ? ["No files uploaded today."]
+      : [
+          "Files uploaded today:",
+          ...uploads.slice(0, 20).map((upload) => `- ${upload.fileName} (${upload.sourceType}) - ${upload.status}`)
+        ]),
     `Rows missing from latest daily production sheet: ${missingRows.length}`,
     "",
     "Module summary:",
@@ -172,9 +182,12 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
     sentTo: recipients,
     missingRows: missingRows.length,
     rowsUpdatedToday: updateMovements.length,
-    uploadsToday: uploads.length
+    uploadsToday: uploads.length,
+    noFilesUploadedToday: uploads.length === 0
   });
 }));
+
+reportsRouter.use(requirePermission("VIEW_REPORTS"));
 
 function csvEscape(value: unknown) {
   const text = String(value ?? "");
@@ -201,6 +214,15 @@ function dayStart(date: Date) {
   const value = new Date(date);
   value.setHours(0, 0, 0, 0);
   return value;
+}
+
+function indiaDayRange(date: Date) {
+  const indiaOffsetMs = 330 * 60 * 1000;
+  const shifted = new Date(date.getTime() + indiaOffsetMs);
+  shifted.setUTCHours(0, 0, 0, 0);
+  const start = new Date(shifted.getTime() - indiaOffsetMs);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { start, end };
 }
 
 function formatDate(date: Date) {
