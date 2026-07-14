@@ -9,6 +9,7 @@ type OrderStage = {
   stageName: string;
   plannedQuantity: number;
   completedQuantity: number;
+  workflowStage?: { sequence: number };
 };
 
 type TimelineEvent = {
@@ -38,7 +39,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     );
   }
 
-  const stages = order.stages as OrderStage[];
+  const stages = [...(order.stages as OrderStage[])].sort(
+    (left, right) => (left.workflowStage?.sequence ?? 0) - (right.workflowStage?.sequence ?? 0)
+  );
   const events = order.events as TimelineEvent[];
   const reworkTickets = order.reworkTickets as ReworkTicket[];
 

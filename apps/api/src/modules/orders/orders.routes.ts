@@ -188,7 +188,10 @@ ordersRouter.get("/", asyncRoute(async (req, res) => {
   const orders = await prisma.order.findMany({
     where: factoryId ? { factoryId } : undefined,
     include: {
-      stages: { orderBy: { createdAt: "asc" } },
+      stages: {
+        include: { workflowStage: true },
+        orderBy: { workflowStage: { sequence: "asc" } }
+      },
       materialMovements: { orderBy: { createdAt: "desc" }, take: 10 },
       reworkTickets: { orderBy: { createdAt: "desc" }, take: 10 },
       samplingApprovals: { orderBy: { createdAt: "asc" } }
@@ -204,7 +207,10 @@ ordersRouter.get("/:id", asyncRoute(async (req, res) => {
     where: { id: String(req.params.id)},
     include: {
       workflowTemplate: true,
-      stages: { orderBy: { createdAt: "asc" } },
+      stages: {
+        include: { workflowStage: true },
+        orderBy: { workflowStage: { sequence: "asc" } }
+      },
       materialMovements: { orderBy: { createdAt: "desc" } },
       reworkTickets: { orderBy: { createdAt: "desc" } },
       samplingApprovals: { orderBy: { createdAt: "asc" } },
