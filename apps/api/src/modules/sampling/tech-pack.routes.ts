@@ -93,22 +93,56 @@ function field(text: string, label: string, nextLabels: string[]) {
   return text.match(regex)?.[1]?.replace(/\n+/g, " ").trim() || "";
 }
 
+const STYLE_LABEL_PATTERN = [
+  "style\\s*(?:no\\.?|number|code|#)?",
+  "article\\s*(?:no\\.?|number|code|#)?",
+  "item\\s*(?:no\\.?|number|code|#)?",
+  "product\\s*(?:no\\.?|number|code|#)?",
+  "design\\s*(?:no\\.?|number|code|#)?"
+].join("|");
+
+function cleanStyleNumber(input: string) {
+  return input
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/[^A-Z0-9-]/gi, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toUpperCase();
+}
+
+function looksLikeStyleNumber(value: string) {
+  const cleaned = cleanStyleNumber(value);
+  if (cleaned.length < 6 || cleaned.length > 80) return false;
+  if (!/[A-Z]/.test(cleaned) || !/\d/.test(cleaned)) return false;
+  if (!cleaned.includes("-")) return false;
+  if (/^(SEASON|DATE|BRAND|CATEGORY|DESIGNER|FABRIC|TRIMS)$/i.test(cleaned)) return false;
+  return true;
+}
+
 function extractStyleNumber(text: string, fileName: string) {
-  return text.match(/Style\s+([A-Z0-9]+(?:-\s*[A-Z0-9]+)+)/i)?.[1]?.replace(/\s+/g, "") ||
-    fileName.match(/[A-Z]{2}\d{2}-[A-Z]{2}-[A-Z]{2}-[A-Z]{3}-\d{5}/)?.[0] ||
+  return extractStyleMatches(text)[0]?.styleNumber ||
+    cleanStyleNumber(fileName.match(/[A-Z0-9]+(?:[-_\s]+[A-Z0-9]+){2,}/i)?.[0] ?? "") ||
     "";
 }
 
 function extractStyleMatches(text: string) {
-  const matches = Array.from(text.matchAll(/\bStyle\s+([A-Z0-9]+(?:-\s*[A-Z0-9]+)+)/gi))
-    .map((match) => ({
-      styleNumber: match[1].replace(/\s+/g, ""),
+  const normalized = normalizeText(text).replace(/[\u2010-\u2015]/g, "-");
+  const labelRegex = new RegExp("\\b(?:" + STYLE_LABEL_PATTERN + ")\\s*[:#-]?\\s*([A-Z0-9][A-Z0-9\\s\\-_/]{4,90})", "gi");
+  const looseRegex = /\b([A-Z]{1,6}\d{2,4}(?:\s*-\s*[A-Z0-9]{1,20}){2,8})\b/gi;
+  const candidates = [
+    ...Array.from(normalized.matchAll(labelRegex)),
+    ...Array.from(normalized.matchAll(looseRegex))
+  ].map((match) => {
+    const raw = match[1].split(/\s+(?:DESIGNER|POINT|FABRIC|TRIMS|SEASON|DATE|BRAND|CATEGORY|COL(?:OU)?R|COLOR)\b/i)[0] ?? match[1];
+    return {
+      styleNumber: cleanStyleNumber(raw),
       index: match.index ?? 0
-    }))
-    .filter((match) => match.styleNumber.length > 0);
+    };
+  }).filter((match) => looksLikeStyleNumber(match.styleNumber));
   const seen = new Set<string>();
 
-  return matches.filter((match) => {
+  return candidates.filter((match) => {
     if (seen.has(match.styleNumber)) return false;
     seen.add(match.styleNumber);
     return true;
@@ -124,22 +158,26 @@ function parseTechPack(text: string, fileName: string) {
     "Assortment Group", "Collection Name", "Sourcing Champion", "Main Materials List", "Fabric Material Sub Type"
   ];
 
+  const colorMatches = Array.from(clean.matchAll(/\\bCOL(?:OU)?R?\\s*[\\u2010-\\u2015-]?\\s*([A-Z][A-Z\\s/&-]{1,40})/gi))
+    .map((match) => match[1].replace(/\\s+/g, " ").trim())
+    .filter(Boolean);
+
   return {
     styleNumber: extractStyleNumber(clean, fileName),
-    styleCode: field(clean, "Style Code", labels),
-    descriptionOne: field(clean, "Description 1", labels),
+    styleCode: field(clean, "Style Code", labels) || field(clean, "Style No", labels) || field(clean, "Style Number", labels),
+    descriptionOne: field(clean, "Description 1", labels) || field(clean, "Product Description", labels) || field(clean, "Category", labels),
     descriptionTwo: field(clean, "Description 2", labels),
-    styleType: field(clean, "Style Type", labels),
-    colorways: field(clean, "Colorways", labels),
-    department: field(clean, "Department", labels),
-    brandDivision: field(clean, "Brand/Division", labels),
+    styleType: field(clean, "Style Type", labels) || field(clean, "Category", labels),
+    colorways: field(clean, "Colorways", labels) || Array.from(new Set(colorMatches)).join(", "),
+    department: field(clean, "Department", labels) || field(clean, "Category", labels),
+    brandDivision: field(clean, "Brand/Division", labels) || field(clean, "Brand", labels),
     season: field(clean, "Season", labels),
     sizeRange: field(clean, "Size Range", labels),
     sizes: field(clean, "Sizes", labels),
     baseSize: field(clean, "Base Size", labels),
-    productDescription: field(clean, "Product Description\\(Key\\s*Attributes\\)", labels),
-    mainMaterials: field(clean, "Main Materials List", labels),
-    sourcingChampion: field(clean, "Sourcing Champion", labels),
+    productDescription: field(clean, "Product Description\\(Key\\s*Attributes\\)", labels) || field(clean, "Product Description", labels),
+    mainMaterials: field(clean, "Main Materials List", labels) || field(clean, "Fabric", labels),
+    sourcingChampion: field(clean, "Sourcing Champion", labels) || field(clean, "Designer", labels),
     supplier: field(clean, "Designated Supplier", labels),
     extractedText: clean.slice(0, 8000)
   };

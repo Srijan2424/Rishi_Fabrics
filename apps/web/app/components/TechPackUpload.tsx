@@ -86,8 +86,16 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
     }
 
     const savedCount = body.acceptedRows?.length ?? 0;
+    const rejectedRows = body.rejectedRows ?? [];
     const duplicateRows = body.alreadyUploadedRows ?? [];
     const duplicateStyles = duplicateRows.map((row: { styleNumber?: string }) => row.styleNumber).filter(Boolean);
+
+    if (savedCount === 0 && duplicateRows.length === 0 && rejectedRows.length > 0) {
+      const firstReason = rejectedRows[0]?.errors?.[0] ?? "No style number could be extracted from this PDF.";
+      setError(firstReason + " Upload a PDF with visible style number text, or report this file if the style is visible but the software missed it.");
+      await loadStyles();
+      return;
+    }
 
     setFiles([]);
     setMessage([
