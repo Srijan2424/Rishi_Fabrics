@@ -81,7 +81,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
         <div className="panel">
           <h2>Move Quantity</h2>
-          <MovementForm orderId={order.id} stages={stages} />
+          <MovementForm orderId={order.id} stages={stages} currentStageCode={order.currentStageCode} />
         </div>
       </section>
 

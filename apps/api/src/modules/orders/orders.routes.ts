@@ -30,8 +30,8 @@ const createOrderSchema = z.object({
 });
 
 const moveMaterialSchema = z.object({
-  fromStageCode: z.string().optional(),
-  toStageCode: z.string(),
+  fromStageCode: z.string().min(1),
+  toStageCode: z.string().min(1),
   quantity: z.number().int().positive(),
   movementType: z.enum(["FORWARD", "ROLLBACK", "REWORK", "SCRAP", "DISPATCH"]).default("FORWARD"),
   notes: z.string().optional()
@@ -263,18 +263,52 @@ ordersRouter.post("/", asyncRoute(async (req, res) => {
 ordersRouter.post("/:id/movements", asyncRoute(async (req, res) => {
   const input = moveMaterialSchema.parse(req.body);
 
-  const order = await prisma.order.findUnique({ where: { id: String(req.params.id) } });
+  const order = await prisma.order.findUnique({
+    where: { id: String(req.params.id) },
+    include: {
+      stages: {
+        include: { workflowStage: true },
+        orderBy: { workflowStage: { sequence: "asc" } }
+      }
+    }
+  });
   if (!order) {
     res.status(404).json({ error: "Order not found" });
     return;
   }
 
-  const targetStage = await prisma.orderStage.findFirst({
-    where: { orderId: order.id, stageCode: input.toStageCode }
-  });
+  if (input.fromStageCode === input.toStageCode) {
+    res.status(400).json({ error: "Source and target stage cannot be the same." });
+    return;
+  }
+
+  const sourceStage = order.stages.find((stage) => stage.stageCode === input.fromStageCode);
+  const targetStage = order.stages.find((stage) => stage.stageCode === input.toStageCode);
+
+  if (!sourceStage) {
+    res.status(400).json({ error: "Source stage does not exist on this order." });
+    return;
+  }
 
   if (!targetStage) {
-    res.status(400).json({ error: "Target stage does not exist on this order" });
+    res.status(400).json({ error: "Target stage does not exist on this order." });
+    return;
+  }
+
+  const movedOut = await prisma.materialMovement.aggregate({
+    where: {
+      orderId: order.id,
+      fromStageCode: input.fromStageCode,
+      movementType: { in: ["FORWARD", "ROLLBACK", "REWORK", "SCRAP", "DISPATCH"] }
+    },
+    _sum: { quantity: true }
+  });
+  const availableQuantity = Math.max(0, sourceStage.completedQuantity - (movedOut._sum.quantity ?? 0));
+
+  if (input.quantity > availableQuantity) {
+    res.status(400).json({
+      error: `Only ${availableQuantity} unit(s) are available to move from ${sourceStage.stageName}. ${sourceStage.completedQuantity} are completed there and ${movedOut._sum.quantity ?? 0} have already been moved out.`
+    });
     return;
   }
 
@@ -313,8 +347,8 @@ ordersRouter.post("/:id/movements", asyncRoute(async (req, res) => {
         factoryId: order.factoryId,
         orderId: order.id,
         type: input.movementType === "DISPATCH" ? "DISPATCH_COMPLETED" : "MATERIAL_MOVED",
-        message: `${input.quantity} units moved to ${input.toStageCode}.`,
-        metadata: JSON.parse(JSON.stringify(input))
+        message: `${input.quantity} units moved from ${sourceStage.stageName} to ${targetStage.stageName}.`,
+        metadata: JSON.parse(JSON.stringify({ ...input, availableBeforeMove: availableQuantity }))
       }
     });
 
