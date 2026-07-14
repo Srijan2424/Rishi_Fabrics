@@ -308,7 +308,10 @@ async function renderStylePreview(input: {
           "900",
           pdfPath,
           outputBase
-        ]);
+        ], {
+          timeout: 20_000,
+          maxBuffer: 20 * 1024 * 1024
+        });
         const localUrl = `/tech-pack-previews/${fileName}.png`;
         const imagePath = `${outputBase}.png`;
         const imageBuffer = await fs.readFile(imagePath);
@@ -537,7 +540,11 @@ techPackRouter.post(
         const parser = new PDFParse({ data: file.buffer });
         const parsedPdf = await parser.getText();
         const pageCount = Number((parsedPdf as any).total ?? (parsedPdf as any).pages ?? 1) || 1;
-        const stylePageMap = await getStylePageMap(parser, pageCount);
+        const textStyleMatches = extractStyleMatches(parsedPdf.text ?? "");
+        const filenameStyleNumber = extractStyleNumberFromFileName(file.originalname);
+        const stylePageMap = textStyleMatches.length > 0
+          ? await getStylePageMap(parser, pageCount)
+          : new Map(filenameStyleNumber ? [[filenameStyleNumber, 1]] : []);
         await parser.destroy();
         const parsedStyles = parseTechPackStyles(parsedPdf.text, file.originalname);
 

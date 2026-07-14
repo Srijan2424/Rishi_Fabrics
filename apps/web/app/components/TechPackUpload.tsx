@@ -116,18 +116,27 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
     for (const file of files) formData.append("files", file);
 
     let response: Response;
+    const controller = new AbortController();
+    const uploadTimeout = window.setTimeout(() => controller.abort(), 120_000);
     try {
       response = await authFetch(clientApiUrl + "/sampling/tech-packs/upload", {
         method: "POST",
         credentials: "include",
-        body: formData
+        body: formData,
+        signal: controller.signal
       });
-    } catch {
+    } catch (error) {
       setSaving(false);
-      setError("Could not reach the API server. Start npm run dev:api and try again.");
+      window.clearTimeout(uploadTimeout);
+      setError(
+        error instanceof DOMException && error.name === "AbortError"
+          ? "Tech pack upload took more than 2 minutes. Upload one PDF at a time or try again after the API wakes up."
+          : "Could not reach the API server. Check that the API is online and try again."
+      );
       return;
     }
 
+    window.clearTimeout(uploadTimeout);
     const body = await response.json().catch(() => ({}));
     setSaving(false);
 
