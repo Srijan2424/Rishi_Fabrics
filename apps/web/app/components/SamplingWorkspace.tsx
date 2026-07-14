@@ -359,40 +359,6 @@ export function SamplingWorkspace({
     }
   }
 
-  function getSamplingApproval(order: SamplingOrder, checkpointCode: string) {
-    return order.samplingApprovals.find((approval) => approval.checkpointCode === checkpointCode) ??
-      defaultApprovals.find((approval) => approval.checkpointCode === checkpointCode);
-  }
-
-  function renderChecklistSelect(order: SamplingOrder, checkpointCode: "FPT" | "GPT") {
-    const approval = getSamplingApproval(order, checkpointCode);
-    const value = (approval?.status ?? "PENDING") as SamplingApproval["status"];
-
-    return (
-      <select
-        className="table-select"
-        value={value}
-        disabled={!canEditSampling || savingId === `${order.id}:${checkpointCode}`}
-        aria-label={`${checkpointCode} status for ${order.orderNumber}`}
-        onClick={(event) => event.stopPropagation()}
-        onChange={(event) => updateSamplingApproval(
-          order.id,
-          checkpointCode,
-          event.target.value as SamplingApproval["status"]
-        )}
-      >
-        {statusOptions.map(([statusValue, label]) => (
-          <option key={statusValue} value={statusValue}>{label}</option>
-        ))}
-      </select>
-    );
-  }
-
-  function renderChecklistText(order: SamplingOrder, checkpointCode: "FPT" | "GPT") {
-    const approval = getSamplingApproval(order, checkpointCode);
-    return statusOptions.find(([value]) => value === (approval?.status ?? "PENDING"))?.[1] ?? "Pending";
-  }
-
   return (
     <section className="grid">
       <div className="panel">
@@ -428,8 +394,6 @@ export function SamplingWorkspace({
                   <th>Order / Style</th>
                   <th>Buyer</th>
                   <th>Stage</th>
-                  <th>FPT</th>
-                  <th>GPT</th>
                   <th>Qty</th>
                   <th>Actions</th>
                 </tr>
@@ -450,8 +414,6 @@ export function SamplingWorkspace({
                         {getDaysInSampling(order.createdAt)} day(s)
                       </span>
                     </td>
-                    <td>{renderChecklistSelect(order, "FPT")}</td>
-                    <td>{renderChecklistSelect(order, "GPT")}</td>
                     <td>
                       <input
                         className="table-input"
@@ -495,8 +457,6 @@ export function SamplingWorkspace({
                 <th>Order / Style</th>
                 <th>Buyer</th>
                 <th>Stage</th>
-                <th>FPT</th>
-                <th>GPT</th>
                 <th>Qty</th>
                 <th>Action</th>
               </tr>
@@ -510,8 +470,6 @@ export function SamplingWorkspace({
                   </td>
                   <td>{order.buyerName}</td>
                   <td>{order.currentStageCode ?? "Sampling"}</td>
-                  <td>{renderChecklistText(order, "FPT")}</td>
-                  <td>{renderChecklistText(order, "GPT")}</td>
                   <td>{order.orderQuantity.toLocaleString()}</td>
                   <td>
                     <button
