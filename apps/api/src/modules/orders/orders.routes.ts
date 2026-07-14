@@ -284,6 +284,8 @@ ordersRouter.post("/:id/movements", asyncRoute(async (req, res) => {
 
   const sourceStage = order.stages.find((stage) => stage.stageCode === input.fromStageCode);
   const targetStage = order.stages.find((stage) => stage.stageCode === input.toStageCode);
+  const sourceIndex = order.stages.findIndex((stage) => stage.stageCode === input.fromStageCode);
+  const targetIndex = order.stages.findIndex((stage) => stage.stageCode === input.toStageCode);
 
   if (!sourceStage) {
     res.status(400).json({ error: "Source stage does not exist on this order." });
@@ -292,6 +294,21 @@ ordersRouter.post("/:id/movements", asyncRoute(async (req, res) => {
 
   if (!targetStage) {
     res.status(400).json({ error: "Target stage does not exist on this order." });
+    return;
+  }
+
+  if (input.movementType === "FORWARD" && targetIndex !== sourceIndex + 1) {
+    res.status(400).json({ error: "Forward movement is only allowed to the next workflow stage." });
+    return;
+  }
+
+  if (input.movementType === "ROLLBACK" && targetIndex !== sourceIndex - 1) {
+    res.status(400).json({ error: "Rollback movement is only allowed to the previous workflow stage." });
+    return;
+  }
+
+  if (input.movementType === "DISPATCH" && (targetIndex !== sourceIndex + 1 || !targetStage.workflowStage.isDispatchStage)) {
+    res.status(400).json({ error: "Dispatch movement is only allowed from Packing to Dispatch." });
     return;
   }
 

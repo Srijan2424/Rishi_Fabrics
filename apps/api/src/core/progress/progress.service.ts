@@ -23,6 +23,7 @@ const fabricStageCodes = new Set([
   "KNITTING",
   "FABRIC_INSPECTION",
   "DYEING",
+  "FABRIC_INSPECTION_AFTER_DYEING",
   "COMPACTING",
   "FABRIC_READY"
 ]);

@@ -213,7 +213,7 @@ async function main() {
 
     ["KNITTING", "Knitting", "AUTOMATIC", "PRODUCTION"],
     ["FABRIC_INSPECTION", "Fabric Inspection", "HYBRID", "INSPECTION"],
-    ["DYEING", "Dyeing", "AUTOMATIC", "PRODUCTION"],
+    ["DYEING", "Dyeing", "AUTOMATIC", "PRODUCTION"],    ["FABRIC_INSPECTION_AFTER_DYEING", "Fabric Inspection After Dyeing", "HYBRID", "INSPECTION"],
     ["PANEL_CUTTING", "Panel Cutting", "AUTOMATIC", "PRODUCTION"],
     ["STITCHING", "Stitching", "AUTOMATIC", "PRODUCTION"],
     ["FINISHING", "Finishing", "AUTOMATIC", "PRODUCTION"],

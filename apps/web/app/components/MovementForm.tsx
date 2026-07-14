@@ -6,6 +6,8 @@ import { authFetch } from "../lib/client-api";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4000";
 
+type MovementType = "FORWARD" | "ROLLBACK" | "DISPATCH";
+
 type Stage = {
   stageCode: string;
   stageName: string;
@@ -13,10 +15,22 @@ type Stage = {
   completedQuantity: number;
 };
 
-function nextStageCode(stages: Stage[], fromStageCode: string) {
+function targetStageCode(stages: Stage[], fromStageCode: string, movementType: MovementType) {
   const index = stages.findIndex((stage) => stage.stageCode === fromStageCode);
-  if (index < 0) return stages[0]?.stageCode ?? "";
-  return stages[index + 1]?.stageCode ?? stages[index]?.stageCode ?? "";
+  if (index < 0) return "";
+
+  if (movementType === "ROLLBACK") return stages[index - 1]?.stageCode ?? "";
+  if (movementType === "DISPATCH") {
+    const nextStage = stages[index + 1];
+    return nextStage?.stageCode === "DISPATCH" ? nextStage.stageCode : "";
+  }
+
+  return stages[index + 1]?.stageCode ?? "";
+}
+
+function validTargetStages(stages: Stage[], fromStageCode: string, movementType: MovementType) {
+  const targetCode = targetStageCode(stages, fromStageCode, movementType);
+  return stages.filter((stage) => stage.stageCode === targetCode);
 }
 
 export function MovementForm({
@@ -31,6 +45,8 @@ export function MovementForm({
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [movementType, setMovementType] = useState<MovementType>("FORWARD");
+
   const defaultFromStageCode = useMemo(() => {
     const currentStage = stages.find((stage) => stage.stageCode === currentStageCode && stage.completedQuantity > 0);
     if (currentStage) return currentStage.stageCode;
@@ -38,11 +54,24 @@ export function MovementForm({
     const lastCompletedStage = [...stages].reverse().find((stage) => stage.completedQuantity > 0);
     return lastCompletedStage?.stageCode ?? stages[0]?.stageCode ?? "";
   }, [currentStageCode, stages]);
+
   const [fromStageCode, setFromStageCode] = useState(defaultFromStageCode);
-  const [toStageCode, setToStageCode] = useState(nextStageCode(stages, defaultFromStageCode));
+  const [toStageCode, setToStageCode] = useState(targetStageCode(stages, defaultFromStageCode, "FORWARD"));
 
   const sourceStage = stages.find((stage) => stage.stageCode === fromStageCode);
-  const targetStage = stages.find((stage) => stage.stageCode === toStageCode);
+  const targetOptions = validTargetStages(stages, fromStageCode, movementType);
+  const targetStage = targetOptions.find((stage) => stage.stageCode === toStageCode) ?? targetOptions[0];
+  const resolvedToStageCode = targetStage?.stageCode ?? "";
+
+  function updateFromStage(nextFromStageCode: string) {
+    setFromStageCode(nextFromStageCode);
+    setToStageCode(targetStageCode(stages, nextFromStageCode, movementType));
+  }
+
+  function updateMovementType(nextMovementType: MovementType) {
+    setMovementType(nextMovementType);
+    setToStageCode(targetStageCode(stages, fromStageCode, nextMovementType));
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,13 +80,13 @@ export function MovementForm({
     const form = new FormData(event.currentTarget);
     const quantity = Number(form.get("quantity"));
 
-    if (!fromStageCode || !toStageCode) {
+    if (!fromStageCode || !resolvedToStageCode) {
       setSaving(false);
-      setError("Choose both source and target stages.");
+      setError("This movement type is not valid from the selected stage.");
       return;
     }
 
-    if (fromStageCode === toStageCode) {
+    if (fromStageCode === resolvedToStageCode) {
       setSaving(false);
       setError("Source and target stage cannot be the same.");
       return;
@@ -70,9 +99,9 @@ export function MovementForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fromStageCode,
-          toStageCode,
+          toStageCode: resolvedToStageCode,
           quantity,
-          movementType: form.get("movementType"),
+          movementType,
           notes: form.get("notes")
         })
       });
@@ -95,15 +124,7 @@ export function MovementForm({
     <form className="form compact" onSubmit={onSubmit}>
       <label>
         From
-        <select
-          name="fromStageCode"
-          value={fromStageCode}
-          onChange={(event) => {
-            const nextFromStageCode = event.target.value;
-            setFromStageCode(nextFromStageCode);
-            setToStageCode(nextStageCode(stages, nextFromStageCode));
-          }}
-        >
+        <select name="fromStageCode" value={fromStageCode} onChange={(event) => updateFromStage(event.target.value)}>
           {stages.map((stage) => (
             <option key={stage.stageCode} value={stage.stageCode}>
               {stage.stageName} ({stage.completedQuantity.toLocaleString()} done)
@@ -113,12 +134,14 @@ export function MovementForm({
       </label>
       <label>
         To
-        <select name="toStageCode" value={toStageCode} onChange={(event) => setToStageCode(event.target.value)} required>
-          {stages.map((stage) => (
-            <option key={stage.stageCode} value={stage.stageCode} disabled={stage.stageCode === fromStageCode}>
-              {stage.stageName}
-            </option>
-          ))}
+        <select name="toStageCode" value={resolvedToStageCode} onChange={(event) => setToStageCode(event.target.value)} required>
+          {targetOptions.length > 0 ? (
+            targetOptions.map((stage) => (
+              <option key={stage.stageCode} value={stage.stageCode}>{stage.stageName}</option>
+            ))
+          ) : (
+            <option value="">No valid target</option>
+          )}
         </select>
       </label>
       <label>
@@ -132,7 +155,7 @@ export function MovementForm({
       </label>
       <label>
         Type
-        <select name="movementType">
+        <select name="movementType" value={movementType} onChange={(event) => updateMovementType(event.target.value as MovementType)}>
           <option value="FORWARD">Forward</option>
           <option value="ROLLBACK">Rollback</option>
           <option value="DISPATCH">Dispatch</option>
@@ -142,7 +165,7 @@ export function MovementForm({
         Notes
         <input name="notes" placeholder="Optional movement note" />
       </label>
-      <button type="submit" disabled={saving || !targetStage || fromStageCode === toStageCode}>
+      <button type="submit" disabled={saving || !targetStage || fromStageCode === resolvedToStageCode}>
         {saving ? "Moving..." : "Move Quantity"}
       </button>
       {error ? <div className="form-message error wide-message">Error: {error}</div> : null}
