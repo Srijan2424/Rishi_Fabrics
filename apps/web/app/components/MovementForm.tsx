@@ -75,9 +75,10 @@ export function MovementForm({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setSaving(true);
     setError("");
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(formElement);
     const quantity = Number(form.get("quantity"));
 
     if (!fromStageCode || !resolvedToStageCode) {
@@ -111,7 +112,7 @@ export function MovementForm({
         throw new Error(data?.error ?? `API responded with ${response.status}`);
       }
 
-      event.currentTarget.reset();
+      formElement.reset();
       router.refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not move quantity.");
