@@ -1,4 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
+import multer from "multer";
 import { ZodError } from "zod";
 import { prisma } from "./db.js";
 import { ImportApplyError, ImportValidationError } from "./core/erp-import/erp-import.errors.js";
@@ -30,6 +31,17 @@ export function errorHandler(error: unknown, req: Request, res: Response, _next:
     res.status(400).json({
       error: error.message
     });
+    return;
+  }
+
+  if (error instanceof multer.MulterError) {
+    const message =
+      error.code === "LIMIT_FILE_SIZE"
+        ? "This upload is too large. Upload PDFs one by one, or compress the tech pack before uploading."
+        : error.code === "LIMIT_FILE_COUNT"
+          ? "Too many files selected. Upload fewer tech packs at a time."
+          : error.message;
+    res.status(413).json({ error: message, code: error.code });
     return;
   }
 

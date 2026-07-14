@@ -13,7 +13,15 @@ import { getObject, uploadObject } from "../../services/storage.js";
 import { recordWorkLog } from "../work-logs/work-log.service.js";
 
 export const techPackRouter = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 } });
+const maxTechPackFileSizeMb = Number(process.env.TECH_PACK_MAX_FILE_MB ?? 30);
+const maxTechPackFiles = Number(process.env.TECH_PACK_MAX_FILES ?? 20);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: maxTechPackFileSizeMb * 1024 * 1024,
+    files: maxTechPackFiles
+  }
+});
 const execFileAsync = promisify(execFile);
 const previewRoot = path.resolve(process.cwd(), ".generated", "tech-pack-previews");
 

@@ -4,6 +4,13 @@ import { ChangeEvent, useEffect, useState } from "react";
 import { ReportIssueButton } from "./ReportIssueButton";
 import { authFetch, clientApiUrl } from "../lib/client-api";
 
+const maxTechPackFileBytes = 30 * 1024 * 1024;
+const maxTechPackBatchBytes = 60 * 1024 * 1024;
+
+function formatFileSize(bytes: number) {
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
 type TechPackStyle = {
   id: string;
   sourceFileName: string;
@@ -46,14 +53,58 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
   }, []);
 
   function onFilesSelected(event: ChangeEvent<HTMLInputElement>) {
-    setFiles(Array.from(event.target.files ?? []));
-    setError("");
+    const selectedFiles = Array.from(event.target.files ?? []);
     setMessage("");
+
+    const oversizedFile = selectedFiles.find((file) => file.size > maxTechPackFileBytes);
+    if (oversizedFile) {
+      setFiles([]);
+      setError(
+        oversizedFile.name +
+          " is " +
+          formatFileSize(oversizedFile.size) +
+          ". Tech pack PDFs can be up to 30 MB each. Compress this PDF or upload a smaller version."
+      );
+      event.target.value = "";
+      return;
+    }
+
+    const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > maxTechPackBatchBytes) {
+      setFiles([]);
+      setError(
+        "The selected tech packs are " +
+          formatFileSize(totalSize) +
+          " together. Upload them in smaller batches of about 60 MB or less."
+      );
+      event.target.value = "";
+      return;
+    }
+
+    setFiles(selectedFiles);
+    setError("");
   }
 
   async function upload() {
     if (files.length === 0) {
       setError("Select one or more PDF tech packs.");
+      return;
+    }
+
+    const oversizedFile = files.find((file) => file.size > maxTechPackFileBytes);
+    if (oversizedFile) {
+      setError(
+        oversizedFile.name +
+          " is " +
+          formatFileSize(oversizedFile.size) +
+          ". Tech pack PDFs can be up to 30 MB each. Compress this PDF or upload a smaller version."
+      );
+      return;
+    }
+
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > maxTechPackBatchBytes) {
+      setError("Upload these tech packs in smaller batches of about 60 MB or less.");
       return;
     }
 
@@ -81,7 +132,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
     setSaving(false);
 
     if (!response.ok) {
-      setError(body.error ?? "Tech pack upload failed.");
+      setError(body.error ?? "Tech pack upload failed. If the PDF is large, compress it or upload files one by one.");
       return;
     }
 
