@@ -310,12 +310,13 @@ function extractFabricDyeing(worksheet: ExcelJS.Worksheet): WorkbookExtractionRe
     const colorCell = cellText(row.getCell(3).value);
     const fabricCell = cellText(row.getCell(4).value);
 
-    if (buyerCell && !isTotalLabel(buyerCell)) buyerName = buyerCell;
+    const isSummaryRow = [buyerCell, styleCell, colorCell, fabricCell].some((value) => value && isTotalLabel(value));
+    if (isSummaryRow) continue;
+
+    if (buyerCell) buyerName = buyerCell;
     if (styleCell) styleName = styleCell;
     if (fabricCell) fabricDescription = fabricCell;
     if (colorCell) colorName = colorCell;
-
-    if (isTotalLabel(buyerCell)) continue;
 
     const hasAnyQuantity = [5, 6, 7, 10, 11, 12, 14, 15].some((col) => cellText(row.getCell(col).value));
     if (!buyerName && !styleName && !colorName && !hasAnyQuantity) continue;

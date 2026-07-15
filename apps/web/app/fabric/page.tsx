@@ -1,3 +1,4 @@
+import { FabricSnapshotTable } from "../components/FabricSnapshotTable";
 import { getFabricSnapshots } from "../lib/api";
 
 type FabricRow = {
@@ -63,42 +64,7 @@ export default async function FabricPage() {
 
       <section className="panel">
         <h2>Latest Fabric Snapshot</h2>
-        {rows.length === 0 ? (
-          <div className="empty">No fabric snapshots yet. Upload Fabric / Dyeing from Imports and save it to the Fabric module.</div>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Buyer</th>
-                <th>Style</th>
-                <th>Colour</th>
-                <th>Fabric</th>
-                <th>Order Qty</th>
-                <th>Sent</th>
-                <th>In-House</th>
-                <th>Shortage</th>
-                <th>Status</th>
-                <th>Dyeing Party</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, 200).map((row) => (
-                <tr key={row.id}>
-                  <td>{row.buyerName}</td>
-                  <td><strong>{row.styleName}</strong></td>
-                  <td>{row.colorName}</td>
-                  <td>{row.fabricDescription ?? "-"}</td>
-                  <td>{row.orderQuantity.toLocaleString()}</td>
-                  <td>{Math.round(row.fabricSentForDyeingKg).toLocaleString()}</td>
-                  <td>{Math.round(row.inhouseAfterDyeingKg).toLocaleString()}</td>
-                  <td>{row.actualShortageFabricBalanceKg.toLocaleString()}</td>
-                  <td>{row.status ?? "-"}</td>
-                  <td>{row.dyeingParty ?? "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <FabricSnapshotTable rows={rows} />
       </section>
     </>
   );

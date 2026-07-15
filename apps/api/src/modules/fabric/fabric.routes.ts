@@ -21,3 +21,25 @@ fabricRouter.get(
     res.json(rows);
   })
 );
+
+fabricRouter.delete(
+  "/snapshots/:id",
+  requirePermission("UPLOAD_ERP_FILE"),
+  asyncRoute(async (req, res) => {
+    const factoryId = String(req.authUser?.factoryId ?? "");
+    const id = String(req.params.id);
+    const result = await prisma.fabricDyeingSnapshot.deleteMany({
+      where: {
+        id,
+        ...(factoryId ? { factoryId } : {})
+      }
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Fabric row not found" });
+      return;
+    }
+
+    res.json({ success: true, deletedRows: result.count });
+  })
+);
