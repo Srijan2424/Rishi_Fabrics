@@ -5,22 +5,6 @@ import { requirePermission } from "../../security/rbac.js";
 
 export const fabricRouter = Router();
 
-function isFabricComplete(row: {
-  status: string | null;
-  fabricSentForDyeingKg: number;
-  inhouseAfterDyeingKg: number;
-}) {
-  const status = String(row.status ?? "").toUpperCase();
-  return (
-    status.includes("COMPLETE") ||
-    status.includes("DONE") ||
-    status.includes("RECEIVED") ||
-    status.includes("INHOUSE") ||
-    status.includes("IN-HOUSE") ||
-    (row.fabricSentForDyeingKg > 0 && row.inhouseAfterDyeingKg >= row.fabricSentForDyeingKg)
-  );
-}
-
 fabricRouter.get(
   "/snapshots",
   requirePermission("VIEW_ORDER"),
@@ -32,6 +16,8 @@ fabricRouter.get(
       take: 500
     });
 
-    res.json(rows.filter((row) => !isFabricComplete(row)));
+    // Every row present in the fabric sheet is operationally important.
+    // Do not hide rows only because fabric is marked in-house or numerically complete.
+    res.json(rows);
   })
 );
