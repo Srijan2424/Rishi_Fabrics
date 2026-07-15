@@ -33,7 +33,7 @@ maintenanceRouter.post("/cleanup", asyncRoute(async (req, res) => {
   const validation = validateCleanupSecret(providedSecret);
 
   if (!validation.ok) {
-    res.status(validation.status).json({ error: validation.error });
+    res.status(validation.status ?? 500).json({ error: validation.error ?? "Cleanup validation failed" });
     return;
   }
 
