@@ -12,6 +12,7 @@ import { factoriesRouter } from "./modules/factories/factories.routes.js";
 import { demoGuidesRouter } from "./modules/demo-guides/demo-guides.routes.js";
 import { historyRouter } from "./modules/history/history.routes.js";
 import { issuesRouter } from "./modules/issues/issues.routes.js";
+import { maintenanceRouter } from "./modules/maintenance/maintenance.routes.js";
 import { monitoringRouter } from "./modules/monitoring/monitoring.routes.js";
 import { ordersRouter } from "./modules/orders/orders.routes.js";
 import { productionUnitsRouter } from "./modules/production-units/production-units.routes.js";
@@ -100,6 +101,7 @@ app.get("/health/deep", async (_req, res, next) => {
 
 app.use("/auth", authRouter);
 app.use("/reports", reportsRouter);
+app.use("/maintenance", maintenanceRouter);
 app.use(requireAuthenticated);
 app.use(
   "/tech-pack-previews",
