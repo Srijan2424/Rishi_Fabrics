@@ -5,11 +5,29 @@ import { requirePermission } from "../../security/rbac.js";
 
 export const fabricRouter = Router();
 
+async function removeFabricSummaryRows(factoryId: string) {
+  const where = {
+    ...(factoryId ? { factoryId } : {}),
+    OR: [
+      { buyerName: { contains: "GRAND TOTAL" } },
+      { styleName: { contains: "GRAND TOTAL" } },
+      { colorName: { contains: "GRAND TOTAL" } },
+      { fabricDescription: { contains: "GRAND TOTAL" } },
+      { status: { contains: "GRAND TOTAL" } },
+      { dyeingParty: { contains: "GRAND TOTAL" } }
+    ]
+  };
+
+  await prisma.fabricDyeingSnapshot.deleteMany({ where });
+}
+
 fabricRouter.get(
   "/snapshots",
   requirePermission("VIEW_ORDER"),
   asyncRoute(async (req, res) => {
     const factoryId = String(req.query.factoryId ?? req.authUser?.factoryId ?? "");
+    await removeFabricSummaryRows(factoryId);
+
     const rows = await prisma.fabricDyeingSnapshot.findMany({
       where: factoryId ? { factoryId } : undefined,
       orderBy: { createdAt: "desc" },
