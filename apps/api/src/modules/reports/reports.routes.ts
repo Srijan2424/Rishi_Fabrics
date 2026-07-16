@@ -5,6 +5,7 @@ import { requirePermission } from "../../security/rbac.js";
 import { DelayService } from "../../core/delay/delay.service.js";
 import { ProgressService } from "../../core/progress/progress.service.js";
 import { sendEmail } from "../../services/email.js";
+import { sendWhatsApp } from "../../services/whatsapp.js";
 
 export const reportsRouter = Router();
 
@@ -38,7 +39,28 @@ async function resolveMdReportRecipients(factoryId?: string) {
   ));
 }
 
-reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) => {
+function resolveMdReportWhatsAppRecipients() {
+  return Array.from(new Set(
+    String(process.env.MD_REPORT_WHATSAPP_NUMBERS || process.env.ADMIN_REPORT_WHATSAPP_NUMBERS || "")
+      .split(",")
+      .map((number) => number.trim())
+      .filter(Boolean)
+  ));
+}
+
+function resolveReportChannel(queryChannel: unknown, path: string) {
+  return String(path.includes("/whatsapp/") ? "whatsapp" : queryChannel || process.env.REPORT_CHANNEL || process.env.REPORT_DELIVERY_CHANNEL || "email")
+    .trim()
+    .toLowerCase();
+}
+
+function formatWhatsAppReport(lines: string[]) {
+  const text = lines.join("\n");
+  if (text.length <= 3500) return text;
+  return `${text.slice(0, 3400)}\n\nReport shortened for WhatsApp. Open the Reports page for full details.`;
+}
+
+const sendDailyProductionReport = asyncRoute(async (req, res) => {
   const expectedSecret = process.env.REPORT_CRON_SECRET;
   const providedSecret = String(req.headers["x-report-secret"] ?? req.query.secret ?? "");
 
@@ -113,12 +135,6 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
     })
   ]);
 
-  const recipients = await resolveMdReportRecipients(factoryId || undefined);
-  if (recipients.length === 0) {
-    res.status(400).json({ error: "No active CEO users found and MD_REPORT_EMAIL/ADMIN_ALERT_EMAIL is not configured" });
-    return;
-  }
-
   const dailyProductionCorrections = updateMovements.filter((movement) => (
     movement.movementType === "ROLLBACK" ||
     String(movement.notes ?? "").includes("Daily production correction")
@@ -166,6 +182,44 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
       : ["- None"])
   ];
 
+  const channel = resolveReportChannel(req.query.channel, req.path);
+
+  if (channel === "whatsapp") {
+    const whatsappRecipients = resolveMdReportWhatsAppRecipients();
+    if (whatsappRecipients.length === 0) {
+      res.status(400).json({ error: "MD_REPORT_WHATSAPP_NUMBERS is not configured" });
+      return;
+    }
+
+    const result = await sendWhatsApp({
+      to: whatsappRecipients,
+      text: formatWhatsAppReport(reportLines)
+    });
+
+    if (!result.ok) {
+      res.status(502).json({ error: result.error ?? "WhatsApp report could not be sent", delivered: result.delivered, failed: result.failed });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      channel,
+      sentTo: whatsappRecipients,
+      delivered: result.delivered,
+      missingRows: missingRows.length,
+      rowsUpdatedToday: updateMovements.length,
+      uploadsToday: uploads.length,
+      noFilesUploadedToday: uploads.length === 0
+    });
+    return;
+  }
+
+  const recipients = await resolveMdReportRecipients(factoryId || undefined);
+  if (recipients.length === 0) {
+    res.status(400).json({ error: "No active CEO users found and MD_REPORT_EMAIL/ADMIN_ALERT_EMAIL is not configured" });
+    return;
+  }
+
   const result = await sendEmail({
     to: recipients,
     subject: `Rishi Fabrics Daily Production Report - ${formatDate(today)}`,
@@ -179,13 +233,19 @@ reportsRouter.post("/daily-production/email/send", asyncRoute(async (req, res) =
 
   res.json({
     ok: true,
+    channel,
     sentTo: recipients,
     missingRows: missingRows.length,
     rowsUpdatedToday: updateMovements.length,
     uploadsToday: uploads.length,
     noFilesUploadedToday: uploads.length === 0
   });
-}));
+});
+
+reportsRouter.get("/daily-production/email/send", sendDailyProductionReport);
+reportsRouter.post("/daily-production/email/send", sendDailyProductionReport);
+reportsRouter.get("/daily-production/whatsapp/send", sendDailyProductionReport);
+reportsRouter.post("/daily-production/whatsapp/send", sendDailyProductionReport);
 
 reportsRouter.use(requirePermission("VIEW_REPORTS"));
 
