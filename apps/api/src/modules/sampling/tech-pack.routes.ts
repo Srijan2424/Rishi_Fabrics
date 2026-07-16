@@ -373,6 +373,8 @@ async function upsertSamplingOrderFromTechPack(input: {
   productCategory: string;
   buyerName: string;
   colorways?: string;
+  orderQuantity?: number;
+  deliveryDays?: number;
 }) {
   const workflow = await prisma.workflowTemplate.findFirst({
     where: {
@@ -396,8 +398,9 @@ async function upsertSamplingOrderFromTechPack(input: {
   }
 
   const startStage = workflow.stages.find((stage) => stage.code === "LAB_DIP_APPROVAL") ?? workflow.stages[0];
+  const orderQuantity = input.orderQuantity ?? 1;
   const deliveryDate = new Date();
-  deliveryDate.setDate(deliveryDate.getDate() + 90);
+  deliveryDate.setDate(deliveryDate.getDate() + (input.deliveryDays ?? 90));
 
   const existing = await prisma.order.findFirst({
     where: {
@@ -425,7 +428,7 @@ async function upsertSamplingOrderFromTechPack(input: {
         orderNumber: input.styleNumber,
         buyerName: input.buyerName,
         productCategory: input.productCategory,
-        orderQuantity: 1,
+        orderQuantity,
         deliveryDate,
         currentStageCode: startStage.code,
         stages: {
@@ -433,7 +436,7 @@ async function upsertSamplingOrderFromTechPack(input: {
             workflowStageId: stage.id,
             stageCode: stage.code,
             stageName: stage.name,
-            plannedQuantity: 1
+            plannedQuantity: orderQuantity
           }))
         },
         orderLines: input.colorways ? {
@@ -442,7 +445,7 @@ async function upsertSamplingOrderFromTechPack(input: {
             styleName: input.styleNumber,
             colorName: input.colorways.slice(0, 120),
             description: input.productCategory,
-            orderQuantity: 1,
+            orderQuantity,
             lastUpdatedAt: new Date()
           }
         } : undefined
@@ -485,6 +488,134 @@ techPackRouter.get(
     }
 
     res.type(object.contentType).send(object.body);
+  })
+);
+
+techPackRouter.post(
+  "/manual",
+  requirePermission("MANAGE_SAMPLING"),
+  upload.single("image"),
+  asyncRoute(async (req, res) => {
+    const factoryId = String(req.body.factoryId ?? req.authUser?.factoryId ?? "");
+    const styleNumber = String(req.body.styleNumber ?? "").trim();
+    const buyerName = String(req.body.buyerName ?? "Manual Sampling").trim();
+    const productCategory = String(req.body.productCategory ?? "Manual Sampling").trim();
+    const colorways = String(req.body.colorways ?? "").trim();
+    const mainMaterials = String(req.body.mainMaterials ?? "").trim();
+    const rawQuantity = Number(req.body.orderQuantity ?? 1);
+    const file = req.file as Express.Multer.File | undefined;
+
+    if (!factoryId) {
+      res.status(400).json({ error: "factoryId is required." });
+      return;
+    }
+
+    if (styleNumber.length < 2) {
+      res.status(400).json({ error: "Style / order code is required." });
+      return;
+    }
+
+    if (buyerName.length < 2 || productCategory.length < 2) {
+      res.status(400).json({ error: "Buyer/brand and style description are required." });
+      return;
+    }
+
+    if (!Number.isInteger(rawQuantity) || rawQuantity <= 0) {
+      res.status(400).json({ error: "Quantity must be a positive whole number." });
+      return;
+    }
+
+    if (file && !file.mimetype.startsWith("image/")) {
+      res.status(400).json({ error: "Only image files can be attached to a manual sampling order." });
+      return;
+    }
+
+    const existingOrder = await prisma.order.findFirst({
+      where: {
+        factoryId,
+        orderNumber: styleNumber
+      }
+    });
+
+    if (existingOrder) {
+      await ensureSamplingApprovals(existingOrder.id);
+      res.status(409).json({
+        error: `${styleNumber} is already uploaded.`,
+        existingOrderId: existingOrder.id
+      });
+      return;
+    }
+
+    const uploadRecord = await prisma.upload.create({
+      data: {
+        factoryId,
+        fileName: file?.originalname ?? `${styleNumber} manual sampling image`,
+        sourceType: "SAMPLING:MANUAL",
+        status: "APPLIED",
+        rowsReceived: 1,
+        rowsAccepted: 1,
+        rowsRejected: 0,
+        errors: []
+      }
+    });
+
+    const storedImage = file
+      ? await uploadObject({
+        key: `manual-sampling-images/${safeFilePart(factoryId)}/${uploadRecord.id}/${safeFilePart(styleNumber)}-${safeFilePart(file.originalname)}`,
+        body: file.buffer,
+        contentType: file.mimetype
+      })
+      : null;
+
+    const saved = await prisma.techPackStyle.create({
+      data: {
+        factoryId,
+        uploadId: uploadRecord.id,
+        sourceFileName: file?.originalname ?? "Manual sampling entry",
+        uploadedBy: req.authUser?.id,
+        styleNumber,
+        descriptionOne: productCategory,
+        colorways: colorways || null,
+        brandDivision: buyerName,
+        mainMaterials: mainMaterials || null,
+        previewImageUrl: storedImage?.url ?? null,
+        previewImageStorageKey: storedImage?.key ?? null,
+        previewPageNumber: null
+      }
+    });
+
+    const order = await upsertSamplingOrderFromTechPack({
+      factoryId,
+      styleNumber,
+      buyerName,
+      productCategory,
+      colorways,
+      orderQuantity: rawQuantity,
+      deliveryDays: 60
+    });
+
+    await recordWorkLog({
+      factoryId,
+      userId: req.authUser?.id,
+      module: "SAMPLING",
+      action: "Manual sampling order created",
+      itemType: "order",
+      itemId: order.id,
+      itemLabel: order.orderNumber,
+      metadata: {
+        styleNumber,
+        buyerName,
+        productCategory,
+        orderQuantity: rawQuantity,
+        hasImage: Boolean(file)
+      }
+    });
+
+    res.status(201).json({
+      style: saved,
+      order,
+      message: `${styleNumber} was added to sampling.`
+    });
   })
 );
 

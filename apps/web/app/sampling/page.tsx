@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ManualSamplingOrderForm } from "../components/ManualSamplingOrderForm";
 import { SamplingWorkspace } from "../components/SamplingWorkspace";
 import { TechPackUpload } from "../components/TechPackUpload";
 import { authFetch } from "../lib/client-api";
@@ -152,6 +153,10 @@ export default function SamplingPage() {
       <section className="grid lower-grid">
         <div className="panel">
           <h2>Tech Pack Intake</h2>
+          <ManualSamplingOrderForm onCreated={async () => {
+            await loadOrders();
+            await loadTechPackStyles();
+          }} />
           <TechPackUpload onUploaded={async () => {
             await loadOrders();
             await loadTechPackStyles();
