@@ -55,9 +55,49 @@ function resolveReportChannel(queryChannel: unknown, path: string) {
 }
 
 function formatWhatsAppReport(lines: string[]) {
-  const text = lines.join("\n");
-  if (text.length <= 3500) return text;
-  return `${text.slice(0, 3400)}\n\nReport shortened for WhatsApp. Open the Reports page for full details.`;
+  const limit = 1500;
+  const findLine = (prefix: string) => lines.find((line) => line.startsWith(prefix));
+  const takeSection = (heading: string, count: number) => {
+    const index = lines.indexOf(heading);
+    if (index === -1) return [];
+    return lines
+      .slice(index + 1)
+      .filter((line) => line.trim().startsWith("- "))
+      .slice(0, count);
+  };
+
+  const uploadsToday = findLine("Uploads today:");
+  const summaryLines = [
+    lines[0],
+    "",
+    findLine("Latest daily production upload:"),
+    findLine("Running orders:"),
+    findLine("Rows updated today:"),
+    findLine("Reduced/corrected quantities today:"),
+    uploadsToday,
+    uploadsToday === "Uploads today: 0" ? "No files uploaded today." : undefined,
+    findLine("Rows missing from latest daily production sheet:"),
+    "",
+    "Module summary:",
+    findLine("- WIP rows uploaded today:"),
+    findLine("- Fabric/dyeing rows uploaded today:"),
+    findLine("- Sampling styles uploaded today:"),
+    "",
+    "Top missing styles/orders:",
+    ...takeSection("Styles/orders missing from latest daily production sheet:", 3),
+    "",
+    "Top warnings:",
+    ...takeSection("Operational update warnings:", 3),
+    "",
+    "Top corrections:",
+    ...takeSection("Reduced/corrected quantities:", 3),
+    "",
+    "Open Reports in Rishi Fabrics for the full detailed report."
+  ].filter((line): line is string => Boolean(line));
+
+  const text = summaryLines.join("\n");
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit - 90).trimEnd()}\n\nShortened for WhatsApp. Open Reports for details.`;
 }
 
 const sendDailyProductionReport = asyncRoute(async (req, res) => {
