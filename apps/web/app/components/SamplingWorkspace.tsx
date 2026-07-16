@@ -147,6 +147,17 @@ export function SamplingWorkspace({
     });
   }, [activeOrders]);
 
+  useEffect(() => {
+    if (activeOrders.length === 0) {
+      setSelectedOrderId("");
+      return;
+    }
+
+    if (!activeOrders.some((order) => order.id === selectedOrderId)) {
+      setSelectedOrderId(activeOrders[0].id);
+    }
+  }, [activeOrders, selectedOrderId]);
+
   function getDaysInSampling(createdAt: string) {
     if (currentTime === null) return 0;
 
@@ -171,6 +182,18 @@ export function SamplingWorkspace({
     : undefined;
 
   async function updateSamplingDecision(orderId: string, action: "REMOVE" | "REVIVE") {
+    const order = action === "REMOVE"
+      ? activeOrders.find((activeOrder) => activeOrder.id === orderId)
+      : removedOrders.find((removedOrder) => removedOrder.id === orderId);
+
+    if (action === "REMOVE") {
+      const confirmed = window.confirm(
+        `Remove this style from active sampling?\n\n${order?.orderNumber ?? "Selected style"} will move to Removed Samples and can be revived later.`
+      );
+
+      if (!confirmed) return;
+    }
+
     setSavingId(orderId);
     setError("");
 
@@ -194,6 +217,16 @@ export function SamplingWorkspace({
       }
 
       await onChanged?.();
+      if (action === "REMOVE") {
+        const remainingActiveOrders = activeOrders.filter((activeOrder) => activeOrder.id !== orderId);
+        setSelectedOrderId(remainingActiveOrders[0]?.id ?? "");
+        if (remainingActiveOrders.length === 0) {
+          setTab("REMOVED");
+        }
+      } else {
+        setSelectedOrderId(orderId);
+        setTab("ACTIVE");
+      }
       router.refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Sampling update failed.");
@@ -437,9 +470,10 @@ export function SamplingWorkspace({
                           className="danger-button"
                           type="button"
                           disabled={!canEditSampling || savingId === order.id}
+                          aria-label={`Remove ${order.orderNumber} from active sampling`}
                           onClick={() => updateSamplingDecision(order.id, "REMOVE")}
                         >
-                          Remove
+                          {savingId === order.id ? "Removing..." : "Remove"}
                         </button>
                       </div>
                     </td>
@@ -476,9 +510,10 @@ export function SamplingWorkspace({
                       className="button-secondary"
                       type="button"
                       disabled={!canEditSampling || savingId === order.id}
+                      aria-label={`Revive ${order.orderNumber} into active sampling`}
                       onClick={() => updateSamplingDecision(order.id, "REVIVE")}
                     >
-                      Revive
+                      {savingId === order.id ? "Reviving..." : "Revive"}
                     </button>
                   </td>
                 </tr>
