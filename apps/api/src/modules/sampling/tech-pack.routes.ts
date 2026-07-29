@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import JSZip from "jszip";
 import multer from "multer";
 import { PDFParse } from "pdf-parse";
 import { prisma } from "../../db.js";
@@ -24,6 +25,12 @@ const upload = multer({
 });
 const execFileAsync = promisify(execFile);
 const previewRoot = path.resolve(process.cwd(), ".generated", "tech-pack-previews");
+const acceptedTechPackExtensions = [".pdf", ".docx", ".pptx"] as const;
+const techPackMimeTypes: Record<(typeof acceptedTechPackExtensions)[number], string[]> = {
+  ".pdf": ["application/pdf"],
+  ".docx": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  ".pptx": ["application/vnd.openxmlformats-officedocument.presentationml.presentation"]
+};
 
 const samplingCheckpoints = [
   {
@@ -275,6 +282,124 @@ function safeFilePart(value: string) {
   return value.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "style";
 }
 
+type AcceptedTechPackExtension = (typeof acceptedTechPackExtensions)[number];
+
+function isAcceptedTechPackExtension(extension: string): extension is AcceptedTechPackExtension {
+  return acceptedTechPackExtensions.includes(extension as AcceptedTechPackExtension);
+}
+
+function getTechPackExtension(fileName: string) {
+  return path.extname(fileName).toLowerCase();
+}
+
+function validateTechPackFile(file: Express.Multer.File): AcceptedTechPackExtension {
+  const extension = getTechPackExtension(file.originalname);
+
+  if (!isAcceptedTechPackExtension(extension)) {
+    throw new Error("Only PDF, Word (.docx), and PowerPoint (.pptx) tech packs are supported.");
+  }
+
+  const allowedMimeTypes = techPackMimeTypes[extension];
+  const providedMimeType = file.mimetype || "";
+
+  if (
+    providedMimeType &&
+    providedMimeType !== "application/octet-stream" &&
+    !allowedMimeTypes.includes(providedMimeType)
+  ) {
+    throw new Error(`File type mismatch. ${file.originalname} looks like ${providedMimeType}, not ${extension}.`);
+  }
+
+  if (extension === ".pdf" && file.buffer.subarray(0, 4).toString("utf8") !== "%PDF") {
+    throw new Error("PDF tech pack is not a valid PDF file.");
+  }
+
+  if ((extension === ".docx" || extension === ".pptx") && file.buffer.subarray(0, 2).toString("utf8") !== "PK") {
+    throw new Error(`${extension.toUpperCase().slice(1)} tech pack is not a valid Office document.`);
+  }
+
+  return extension;
+}
+
+function decodeXmlText(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'");
+}
+
+function xmlToText(xml: string) {
+  return decodeXmlText(
+    xml
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+async function extractDocxText(buffer: Buffer) {
+  const zip = await JSZip.loadAsync(buffer);
+  const documentPaths = Object.keys(zip.files)
+    .filter((fileName) => /^word\/(?:document|header\d+|footer\d+)\.xml$/i.test(fileName))
+    .sort();
+  const parts = await Promise.all(
+    documentPaths.map(async (fileName) => xmlToText(await zip.file(fileName)!.async("text")))
+  );
+
+  return parts.filter(Boolean).join("\n");
+}
+
+async function extractPptxText(buffer: Buffer) {
+  const zip = await JSZip.loadAsync(buffer);
+  const slidePaths = Object.keys(zip.files)
+    .filter((fileName) => /^ppt\/slides\/slide\d+\.xml$/i.test(fileName))
+    .sort((left, right) => {
+      const leftNumber = Number(left.match(/slide(\d+)\.xml$/i)?.[1] ?? 0);
+      const rightNumber = Number(right.match(/slide(\d+)\.xml$/i)?.[1] ?? 0);
+      return leftNumber - rightNumber;
+    });
+  const parts = await Promise.all(
+    slidePaths.map(async (fileName) => xmlToText(await zip.file(fileName)!.async("text")))
+  );
+
+  return parts.filter(Boolean).join("\n");
+}
+
+async function extractTechPackText(file: Express.Multer.File, extension: string) {
+  if (extension === ".pdf") {
+    const parser = new PDFParse({ data: file.buffer });
+    try {
+      const parsedPdf = await parser.getText();
+      const pageCount = Number((parsedPdf as any).total ?? (parsedPdf as any).pages ?? 1) || 1;
+      const textStyleMatches = extractStyleMatches(parsedPdf.text ?? "");
+      const filenameStyleNumber = extractStyleNumberFromFileName(file.originalname);
+      const stylePageMap = textStyleMatches.length > 0
+        ? await getStylePageMap(parser, pageCount)
+        : new Map(filenameStyleNumber ? [[filenameStyleNumber, 1]] : []);
+
+      return {
+        text: parsedPdf.text ?? "",
+        stylePageMap,
+        canRenderPreview: true
+      };
+    } finally {
+      await parser.destroy();
+    }
+  }
+
+  const text = extension === ".docx"
+    ? await extractDocxText(file.buffer)
+    : await extractPptxText(file.buffer);
+
+  return {
+    text,
+    stylePageMap: new Map<string, number>(),
+    canRenderPreview: false
+  };
+}
+
 async function renderStylePreview(input: {
   buffer: Buffer;
   factoryId: string;
@@ -334,18 +459,20 @@ async function renderStylePreview(input: {
   }
 }
 
-async function storeSourcePdf(input: {
+async function storeSourceTechPack(input: {
   factoryId: string;
   uploadId: string;
   index: number;
   originalName: string;
   buffer: Buffer;
+  extension: string;
+  contentType: string;
 }) {
-  const key = `tech-pack-pdfs/${safeFilePart(input.factoryId)}/${input.uploadId}/${input.index + 1}-${safeFilePart(input.originalName)}.pdf`;
+  const key = `tech-pack-files/${safeFilePart(input.factoryId)}/${input.uploadId}/${input.index + 1}-${safeFilePart(input.originalName)}${input.extension}`;
   return uploadObject({
     key,
     body: input.buffer,
-    contentType: "application/pdf"
+    contentType: input.contentType
   });
 }
 
@@ -633,7 +760,7 @@ techPackRouter.post(
     }
 
     if (files.length === 0) {
-      res.status(400).json({ error: "At least one tech-pack PDF is required." });
+      res.status(400).json({ error: "At least one tech-pack file is required." });
       return;
     }
 
@@ -641,7 +768,7 @@ techPackRouter.post(
       data: {
         factoryId,
         fileName: files.map((file) => file.originalname).join(", ").slice(0, 250),
-        sourceType: "TECH_PACK:PDF",
+        sourceType: "TECH_PACK:DOCUMENT",
         status: "APPLIED",
         rowsReceived: files.length,
         rowsAccepted: 0,
@@ -656,28 +783,21 @@ techPackRouter.post(
 
     for (const [index, file] of files.entries()) {
       try {
-        if (!file.originalname.toLowerCase().endsWith(".pdf")) {
-          throw new Error("Only PDF tech packs are supported.");
-        }
+        const extension = validateTechPackFile(file);
+        const contentType = techPackMimeTypes[extension][0];
 
-        const sourceFile = await storeSourcePdf({
+        const sourceFile = await storeSourceTechPack({
           factoryId,
           uploadId: uploadRecord.id,
           index,
           originalName: file.originalname,
-          buffer: file.buffer
+          buffer: file.buffer,
+          extension,
+          contentType
         });
 
-        const parser = new PDFParse({ data: file.buffer });
-        const parsedPdf = await parser.getText();
-        const pageCount = Number((parsedPdf as any).total ?? (parsedPdf as any).pages ?? 1) || 1;
-        const textStyleMatches = extractStyleMatches(parsedPdf.text ?? "");
-        const filenameStyleNumber = extractStyleNumberFromFileName(file.originalname);
-        const stylePageMap = textStyleMatches.length > 0
-          ? await getStylePageMap(parser, pageCount)
-          : new Map(filenameStyleNumber ? [[filenameStyleNumber, 1]] : []);
-        await parser.destroy();
-        const parsedStyles = parseTechPackStyles(parsedPdf.text, file.originalname);
+        const extracted = await extractTechPackText(file, extension);
+        const parsedStyles = parseTechPackStyles(extracted.text, file.originalname);
 
         if (parsedStyles.length === 0 || parsedStyles.every((style) => !style.styleNumber)) {
           throw new Error("Could not extract style number.");
@@ -705,8 +825,8 @@ techPackRouter.post(
           });
 
           if (existingStyle || existingOrder) {
-            if (existingStyle && !existingStyle.previewImageUrl) {
-              const previewPageNumber = stylePageMap.get(parsed.styleNumber) ?? 1;
+            if (existingStyle && !existingStyle.previewImageUrl && extracted.canRenderPreview) {
+              const previewPageNumber = extracted.stylePageMap.get(parsed.styleNumber) ?? 1;
               const previewImageUrl = await renderStylePreview({
                 buffer: file.buffer,
                 factoryId,
@@ -741,14 +861,18 @@ techPackRouter.post(
             continue;
           }
 
-          const previewPageNumber = stylePageMap.get(parsed.styleNumber) ?? 1;
-          const previewImageUrl = await renderStylePreview({
-            buffer: file.buffer,
-            factoryId,
-            uploadId: uploadRecord.id,
-            styleNumber: parsed.styleNumber,
-            pageNumber: previewPageNumber
-          });
+          const previewPageNumber = extracted.canRenderPreview
+            ? extracted.stylePageMap.get(parsed.styleNumber) ?? 1
+            : null;
+          const previewImageUrl = previewPageNumber
+            ? await renderStylePreview({
+              buffer: file.buffer,
+              factoryId,
+              uploadId: uploadRecord.id,
+              styleNumber: parsed.styleNumber,
+              pageNumber: previewPageNumber
+            })
+            : undefined;
 
           const saved = await prisma.techPackStyle.create({
             data: {
@@ -760,7 +884,7 @@ techPackRouter.post(
               uploadedBy: req.authUser?.id,
               previewImageUrl: previewImageUrl?.url,
               previewImageStorageKey: previewImageUrl?.key,
-              previewPageNumber,
+              previewPageNumber: previewPageNumber ?? undefined,
               ...parsed
             }
           });

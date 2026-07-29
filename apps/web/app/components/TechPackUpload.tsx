@@ -63,7 +63,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
         oversizedFile.name +
           " is " +
           formatFileSize(oversizedFile.size) +
-          ". Tech pack PDFs can be up to 100 MB each. Compress this PDF or upload a smaller version."
+          ". Tech pack files can be up to 100 MB each. Compress this file or upload a smaller version."
       );
       event.target.value = "";
       return;
@@ -87,7 +87,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
 
   async function upload() {
     if (files.length === 0) {
-      setError("Select one or more PDF tech packs.");
+      setError("Select one or more PDF, Word, or PowerPoint tech packs.");
       return;
     }
 
@@ -97,7 +97,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
         oversizedFile.name +
           " is " +
           formatFileSize(oversizedFile.size) +
-          ". Tech pack PDFs can be up to 100 MB each. Compress this PDF or upload a smaller version."
+          ". Tech pack files can be up to 100 MB each. Compress this file or upload a smaller version."
       );
       return;
     }
@@ -130,7 +130,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
       window.clearTimeout(uploadTimeout);
       setError(
         error instanceof DOMException && error.name === "AbortError"
-          ? "Tech pack upload took more than 2 minutes. Upload one PDF at a time or try again after the API wakes up."
+          ? "Tech pack upload took more than 2 minutes. Upload one file at a time or try again after the API wakes up."
           : "Could not reach the API server. Check that the API is online and try again."
       );
       return;
@@ -141,7 +141,7 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
     setSaving(false);
 
     if (!response.ok) {
-      setError(body.error ?? "Tech pack upload failed. If the PDF is large, compress it or upload files one by one.");
+      setError(body.error ?? "Tech pack upload failed. If the file is large, compress it or upload files one by one.");
       return;
     }
 
@@ -172,17 +172,17 @@ export function TechPackUpload({ onUploaded }: { onUploaded?: () => void | Promi
     <div className="tech-pack-grid">
       <div className="sampling-card">
         <strong>Upload Tech Packs</strong>
-        <span>Upload multiple vendor PDF tech packs. Only stable style information is extracted into Sampling.</span>
-        <input type="file" accept=".pdf" multiple onChange={onFilesSelected} />
+        <span>Upload multiple vendor PDF, Word, or PowerPoint tech packs. Only stable style information is extracted into Sampling.</span>
+        <input type="file" accept=".pdf,.docx,.pptx" multiple onChange={onFilesSelected} />
         {files.length > 0 ? <span>{files.length} file(s) selected</span> : null}
         <button type="button" onClick={upload} disabled={saving}>
-          {saving ? "Uploading..." : "Upload PDFs"}
+          {saving ? "Uploading..." : "Upload Files"}
         </button>
         {error ? (
           <div className="form-error upload-error-detail">
             <strong>{error}</strong>
-            <span>Why: The PDF could not be accepted or parsed with the current tech-pack rules.</span>
-            <span>What to change: Upload PDF tech packs with visible style numbers. If the file is valid, report it to Admin.</span>
+            <span>Why: The file could not be accepted or parsed with the current tech-pack rules.</span>
+            <span>What to change: Upload PDF, Word, or PowerPoint tech packs with visible style numbers. If the file is valid, report it to Admin.</span>
             <ReportIssueButton title="Tech Pack upload rejected" module="SAMPLING" linkedType="tech-pack-upload" context={{ error, files: files.map((file) => file.name) }} />
           </div>
         ) : null}
