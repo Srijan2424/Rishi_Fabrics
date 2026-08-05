@@ -16,6 +16,8 @@ export type FabricRow = {
   actualShortageFabricBalanceKg: number;
   status: string | null;
   dyeingParty: string | null;
+  sourceRowCount?: number;
+  sourceFileNames?: string[];
 };
 
 function isLikelyUnhelpful(row: FabricRow) {
@@ -40,7 +42,7 @@ export function FabricSnapshotTable({ rows }: { rows: FabricRow[] }) {
   }, [visibleRows]);
 
   async function removeRow(row: FabricRow) {
-    const confirmed = window.confirm(`Remove this fabric row?\n\n${row.buyerName} - ${row.styleName} - ${row.colorName}`);
+    const confirmed = window.confirm(`Remove this fabric row${row.sourceRowCount && row.sourceRowCount > 1 ? ` and its ${row.sourceRowCount} merged source rows` : ""}?\n\n${row.buyerName} - ${row.styleName} - ${row.colorName}`);
     if (!confirmed) return;
 
     setDeletingId(row.id);
@@ -102,7 +104,10 @@ export function FabricSnapshotTable({ rows }: { rows: FabricRow[] }) {
               <td>{Math.round(row.fabricSentForDyeingKg).toLocaleString()}</td>
               <td>{Math.round(row.inhouseAfterDyeingKg).toLocaleString()}</td>
               <td>{row.actualShortageFabricBalanceKg.toLocaleString()}</td>
-              <td>{row.status ?? "-"}</td>
+              <td>
+                {row.status ?? "-"}
+                {row.sourceRowCount && row.sourceRowCount > 1 ? <span className="muted-row">Merged {row.sourceRowCount} sheet rows</span> : null}
+              </td>
               <td>{row.dyeingParty ?? "-"}</td>
               <td>
                 <button
