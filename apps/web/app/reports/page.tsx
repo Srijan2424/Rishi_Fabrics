@@ -1,4 +1,5 @@
 import { apiUrl, getCurrentUser, getReportSummary } from "../lib/api";
+import { DailyReportArchive } from "../components/DailyReportArchive";
 
 function formatDate(value: string | Date | undefined) {
   if (!value) return "-";
@@ -25,7 +26,9 @@ function ProgressBar({ value }: { value: number }) {
   const safeValue = percent(value);
   return (
     <div className="report-progress">
-      <span style={{ width: safeValue + "%" }} />
+      <div>
+        <span style={{ width: safeValue + "%" }} />
+      </div>
       <strong>{safeValue}%</strong>
     </div>
   );
@@ -39,48 +42,115 @@ function judgementClass(value: string | undefined) {
   return "status-neutral";
 }
 
+function judgementLabel(value: string | undefined) {
+  return String(value ?? "NEEDS_REVIEW").replaceAll("_", " ");
+}
+
+function compactNumber(value: number | undefined) {
+  const safeValue = Number(value ?? 0);
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(safeValue);
+}
+
+function judgementCounts(rows: any[]) {
+  return rows.reduce((counts, row) => {
+    const key = String(row.judgement ?? "NEEDS_REVIEW").toUpperCase();
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {} as Record<string, number>);
+}
+
+function HealthCard({ title, rows, summary }: { title: string; rows: any[]; summary: string }) {
+  const counts = judgementCounts(rows);
+  const red = (counts.NO_PROGRESS ?? 0) + (counts.AT_RISK ?? 0);
+  const yellow = counts.MOVING_FORWARD ?? 0;
+  const green = counts.COMPLETE ?? 0;
+  const total = rows.length;
+
+  return (
+    <div className="report-health-card">
+      <div>
+        <span>{title}</span>
+        <strong>{red > 0 ? `${red} need attention` : "No urgent items"}</strong>
+        <p>{summary}</p>
+      </div>
+      <div className="traffic-row" aria-label={`${title} status split`}>
+        <span className="traffic-red">{red}</span>
+        <span className="traffic-yellow">{yellow}</span>
+        <span className="traffic-green">{green}</span>
+        <span className="traffic-grey">{total}</span>
+      </div>
+    </div>
+  );
+}
+
+function PriorityList({ rows }: { rows: any[] }) {
+  const priorityRows = rows
+    .filter((row) => ["NO_PROGRESS", "AT_RISK"].includes(String(row.judgement ?? "").toUpperCase()))
+    .slice(0, 6);
+
+  return (
+    <section className="panel section-panel report-priority">
+      <div className="panel-head">
+        <div>
+          <h2>Today&apos;s Priority Follow-ups</h2>
+          <p>The highest attention items from orders, fabric, and sampling.</p>
+        </div>
+      </div>
+      {priorityRows.length === 0 ? (
+        <div className="empty">No urgent progress gaps found in today&apos;s report.</div>
+      ) : (
+        <div className="priority-list">
+          {priorityRows.map((row) => (
+            <div key={`${row.department}:${row.id}:${row.process}`} className="priority-item">
+              <span className={"status-pill " + judgementClass(row.judgement)}>{judgementLabel(row.judgement)}</span>
+              <div>
+                <strong>{row.orderNumber ?? row.styleName ?? row.buyerName ?? "Progress item"}</strong>
+                <p>{[row.department, row.process, row.buyerName, row.styleName, row.colorName].filter(Boolean).join(" / ")}</p>
+                <p>{row.message}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DepartmentJudgementTable({ title, rows }: { title: string; rows: any[] }) {
   return (
-    <section className="panel section-panel">
-      <h2>{title}</h2>
+    <section className="panel section-panel judgement-panel">
+      <div className="panel-head">
+        <div>
+          <h2>{title}</h2>
+          <p>Planned versus completed quantity, with balance highlighted.</p>
+        </div>
+      </div>
       {rows.length === 0 ? (
         <div className="empty">No pending judgement items found for this department.</div>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Order / Style</th>
-              <th>Process</th>
-              <th>Planned</th>
-              <th>Completed</th>
-              <th>Balance</th>
-              <th>Progress</th>
-              <th>Judgement</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  <strong>{row.orderNumber ?? row.styleName ?? "-"}</strong>
-                  <span className="muted block">{[row.buyerName, row.styleName, row.colorName].filter(Boolean).join(" / ")}</span>
-                </td>
-                <td>{row.process}</td>
-                <td>{row.plannedQuantity}</td>
-                <td>{row.completedQuantity}</td>
-                <td>{row.remainingQuantity}</td>
-                <td><ProgressBar value={row.progressPercent} /></td>
-                <td>
-                  <span className={"status-pill " + judgementClass(row.judgement)}>{row.judgement}</span>
-                  <span className="muted block">{row.message}</span>
-                  {Array.isArray(row.pendingApprovals) && row.pendingApprovals.length > 0 ? (
-                    <span className="muted block">Pending: {row.pendingApprovals.slice(0, 3).join(", ")}</span>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="judgement-list">
+          {rows.slice(0, 8).map((row) => (
+            <article key={row.id} className="judgement-row">
+              <div className="judgement-main">
+                <span className={"status-pill " + judgementClass(row.judgement)}>{judgementLabel(row.judgement)}</span>
+                <strong>{row.orderNumber ?? row.styleName ?? "-"}</strong>
+                <p>{[row.process, row.buyerName, row.styleName, row.colorName].filter(Boolean).join(" / ")}</p>
+              </div>
+              <div className="quantity-strip">
+                <div><span>Planned</span><strong>{compactNumber(row.plannedQuantity)}</strong></div>
+                <div><span>Done</span><strong>{compactNumber(row.completedQuantity)}</strong></div>
+                <div><span>Balance</span><strong>{compactNumber(row.remainingQuantity)}</strong></div>
+              </div>
+              <div className="judgement-progress">
+                <ProgressBar value={row.progressPercent} />
+                <p>{row.message}</p>
+                {Array.isArray(row.pendingApprovals) && row.pendingApprovals.length > 0 ? (
+                  <p>Pending: {row.pendingApprovals.slice(0, 3).join(", ")}</p>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </div>
       )}
     </section>
   );
@@ -101,6 +171,13 @@ export default async function ReportsPage() {
   const fabricProgress = sections.fabricProgress ?? {};
   const uploadHealth = sections.uploadHealth ?? {};
   const departmentJudgements = sections.departmentJudgements ?? {};
+  const orderJudgements = [
+    ...(departmentJudgements.orders?.cutting ?? productionProgress.departmentJudgements?.cutting ?? []),
+    ...(departmentJudgements.orders?.stitching ?? productionProgress.departmentJudgements?.stitching ?? [])
+  ];
+  const fabricJudgements = departmentJudgements.fabric ?? fabricProgress.departmentJudgements ?? [];
+  const samplingJudgements = departmentJudgements.sampling ?? [];
+  const allJudgements = [...orderJudgements, ...fabricJudgements, ...samplingJudgements];
 
   return (
     <div>
@@ -135,6 +212,28 @@ export default async function ReportsPage() {
         <div className="metric"><span>At Risk</span><strong>{metrics.atRiskOrders ?? 0}</strong></div>
         <div className="metric"><span>Delayed</span><strong>{metrics.delayedOrders ?? 0}</strong></div>
       </section>
+
+      <section className="report-health-grid">
+        <HealthCard
+          title="Orders"
+          rows={orderJudgements}
+          summary={`${productionProgress.runningOrders ?? 0} running orders · ${productionProgress.averageProgressPercent ?? 0}% average progress`}
+        />
+        <HealthCard
+          title="Fabric"
+          rows={fabricJudgements}
+          summary={`${fabricProgress.pendingRows ?? 0} pending fabric rows · ${fabricProgress.shortageKg ?? 0} kg shortage`}
+        />
+        <HealthCard
+          title="Sampling"
+          rows={samplingJudgements}
+          summary={`${samplingProgress.pendingApprovals ?? 0} approvals pending · ${samplingProgress.completedOrders ?? 0} completed`}
+        />
+      </section>
+
+      <DailyReportArchive />
+
+      <PriorityList rows={allJudgements} />
 
       <section className="report-grid">
         <div className="report-card">
