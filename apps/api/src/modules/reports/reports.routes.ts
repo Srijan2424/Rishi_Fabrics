@@ -421,6 +421,18 @@ function extractDailyProductionUpdates(notes: string | null | undefined) {
     .filter(Boolean);
 }
 
+function extractDailyProductionChanges(notes: string | null | undefined) {
+  const marker = "Daily production changes:";
+  const text = String(notes ?? "");
+  const index = text.indexOf(marker);
+  if (index === -1) return [];
+  return text
+    .slice(index + marker.length)
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function isFabricComplete(row: { status: string | null; fabricSentForDyeingKg: number; inhouseAfterDyeingKg: number }) {
   const status = String(row.status ?? "").toUpperCase();
   return status.includes("COMPLETE") || status.includes("DONE") || status.includes("RECEIVED") || status.includes("INHOUSE") || status.includes("IN-HOUSE") || (row.fabricSentForDyeingKg > 0 && row.inhouseAfterDyeingKg >= row.fabricSentForDyeingKg);
@@ -518,6 +530,19 @@ function dailyReportCsv(report: { reportDate: Date; snapshot: unknown }) {
     { section: "Summary", metric: "Rejected Rows", value: snapshotMetric(snapshot, "metrics.rejectedRows") }
   ];
   const judgementGroups = snapshot.sections?.departmentJudgements ?? {};
+  const dailyProductionChanges = (snapshot.sections?.dailyProductionChanges ?? []) as Record<string, unknown>[];
+  for (const row of dailyProductionChanges) {
+    rows.push({
+      section: "Daily Production Changes",
+      metric: row.stageCode ?? "Production movement",
+      orderNumber: row.orderNumber,
+      buyerName: row.buyerName,
+      quantity: row.quantity,
+      movementType: row.movementType,
+      changes: Array.isArray(row.changes) ? row.changes.join("; ") : "",
+      createdAt: row.createdAt
+    });
+  }
   const judgementRows = [
     ...((judgementGroups.orders?.cutting ?? []) as Record<string, unknown>[]),
     ...((judgementGroups.orders?.stitching ?? []) as Record<string, unknown>[]),
@@ -666,6 +691,21 @@ async function buildReportSummary(factoryId: string, selectedDateInput?: Date) {
   })));
   const rowsMissingFromLatestDailyProduction = allDailyProductionRows.filter((row) => row.notReportedInLatestDailyProduction);
   const dailyProductionUpdateRows = allDailyProductionRows.filter((row) => row.updateAlerts.length > 0);
+  const dailyProductionChangeRows = weeklyDailyProductionMovements
+    .map((movement) => ({
+      id: movement.id,
+      orderId: movement.orderId,
+      orderNumber: movement.order.orderNumber,
+      buyerName: movement.order.buyerName,
+      stageCode: movement.toStageCode ?? movement.fromStageCode,
+      quantity: movement.quantity,
+      movementType: movement.movementType,
+      notes: movement.notes,
+      createdAt: movement.createdAt,
+      changes: extractDailyProductionChanges(movement.notes)
+    }))
+    .filter((movement) => movement.changes.length > 0)
+    .slice(0, 80);
   const orderDepartmentJudgements = allDailyProductionRows
     .map((line) => ({
       id: line.id,
@@ -837,15 +877,18 @@ async function buildReportSummary(factoryId: string, selectedDateInput?: Date) {
         acceptedRows,
         rejectedRows,
         dailyProductionUpdateAlerts: dailyProductionUpdateRows.length,
+        dailyProductionChangeRows: dailyProductionChangeRows.length,
         reducedOrCorrectedQuantities: quantityCorrections.length,
         filesNeedingCorrection: weeklyUploads.filter((upload) => upload.rowsRejected > 0),
         dailyProductionUpdates: dailyProductionUpdateRows.slice(0, 50),
+        dailyProductionChanges: dailyProductionChangeRows.slice(0, 50),
         quantityCorrections: quantityCorrections.slice(0, 50),
         missingFromLatestDailyProduction: rowsMissingFromLatestDailyProduction.slice(0, 50)
       },
       productionStatus,
       dailyProduction: allDailyProductionRows.slice(0, 120),
       dailyProductionUpdates: dailyProductionUpdateRows.slice(0, 50),
+      dailyProductionChanges: dailyProductionChangeRows.slice(0, 50),
       quantityCorrections: quantityCorrections.slice(0, 50),
       fabricStatus: pendingFabricRows.slice(0, 100),
       wipStatus: weeklyWipRows.slice(0, 100),

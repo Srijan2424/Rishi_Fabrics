@@ -583,6 +583,58 @@ export class ErpImportService {
     return [notes, updateText].filter(Boolean).join(notes && updateText ? " | " : "") || undefined;
   }
 
+  private dailyProductionChangeNotes(input: {
+    previousLine?: {
+      cuttingTotalQty: number;
+      cuttingToLineBal: number;
+      lineLoadingQty: number;
+      todayLineOutQty: number;
+      totalLineOutQty: number;
+      lineInBalanceQty: number;
+    } | null;
+    row: {
+      cuttingTotalQuantity: number;
+      cuttingToLineBalanceQuantity: number;
+      lineLoadingQuantity: number;
+      todayLineOutQuantity: number;
+      totalLineOutQuantity: number;
+      lineInBalanceQuantity: number;
+    };
+  }) {
+    const previous = input.previousLine;
+    if (!previous) {
+      return [
+        `New daily production row created with cutting ${input.row.cuttingTotalQuantity}, line loading ${input.row.lineLoadingQuantity}, today line out ${input.row.todayLineOutQuantity}, total line out ${input.row.totalLineOutQuantity}.`
+      ];
+    }
+
+    const fields = [
+      { label: "Cutting", before: previous.cuttingTotalQty, after: input.row.cuttingTotalQuantity },
+      { label: "Cutting to line balance", before: previous.cuttingToLineBal, after: input.row.cuttingToLineBalanceQuantity },
+      { label: "Line loading", before: previous.lineLoadingQty, after: input.row.lineLoadingQuantity },
+      { label: "Today line out", before: previous.todayLineOutQty, after: input.row.todayLineOutQuantity },
+      { label: "Total line out", before: previous.totalLineOutQty, after: input.row.totalLineOutQuantity },
+      { label: "Line in balance", before: previous.lineInBalanceQty, after: input.row.lineInBalanceQuantity }
+    ];
+
+    return fields
+      .filter((field) => field.before !== field.after)
+      .map((field) => {
+        const delta = field.after - field.before;
+        const sign = delta > 0 ? "+" : "";
+        return `${field.label}: ${field.before} -> ${field.after} (${sign}${delta})`;
+      });
+  }
+
+  private dailyProductionChangeQuantity(changes: string[], completedDelta: number) {
+    if (completedDelta !== 0) return Math.abs(completedDelta);
+    const deltas = changes
+      .map((change) => change.match(/\(([+-]?\d+)\)$/)?.[1])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    return Math.max(1, ...deltas.map((value) => Math.abs(value)));
+  }
+
   private validateDailyProductionRow(rowNumber: number, row: Record<string, string>) {
     const errors: string[] = [];
     const updates: string[] = [];
@@ -1569,6 +1621,27 @@ export class ErpImportService {
           }
         });
 
+        const previousOrderLine = await tx.orderLine.findUnique({
+          where: {
+            orderId_colorName: {
+              orderId: order.id,
+              colorName: row.colorName
+            }
+          },
+          select: {
+            cuttingTotalQty: true,
+            cuttingToLineBal: true,
+            lineLoadingQty: true,
+            todayLineOutQty: true,
+            totalLineOutQty: true,
+            lineInBalanceQty: true
+          }
+        });
+        const dailyProductionChanges = this.dailyProductionChangeNotes({
+          previousLine: previousOrderLine,
+          row
+        });
+
         const orderLine = await tx.orderLine.upsert({
           where: {
             orderId_colorName: {
@@ -1612,17 +1685,20 @@ export class ErpImportService {
           }
         });
 
-        if (completedDelta !== 0) {
+        if (completedDelta !== 0 || dailyProductionChanges.length > 0) {
           const movementNote = completedDelta < 0
-            ? [row.notes, quantityCorrectionNote].filter(Boolean).join(" ")
-            : row.notes ?? `Daily production update from upload ${input.uploadId}${mapping?.productionUnit?.name ? ` (${mapping.productionUnit.name})` : ""}`;
+            ? [row.notes, quantityCorrectionNote, `Daily production changes: ${dailyProductionChanges.join("; ")}`].filter(Boolean).join(" ")
+            : [
+                row.notes ?? `Daily production update from upload ${input.uploadId}${mapping?.productionUnit?.name ? ` (${mapping.productionUnit.name})` : ""}`,
+                dailyProductionChanges.length > 0 ? `Daily production changes: ${dailyProductionChanges.join("; ")}` : ""
+              ].filter(Boolean).join(" | ");
 
           await tx.materialMovement.create({
             data: {
               orderId: order.id,
               fromStageCode: completedDelta < 0 ? row.stageCode : null,
               toStageCode: row.stageCode,
-              quantity: Math.abs(completedDelta),
+              quantity: this.dailyProductionChangeQuantity(dailyProductionChanges, completedDelta),
               movementType: completedDelta < 0 ? "ROLLBACK" : workflowStage.isDispatchStage ? "DISPATCH" : "FORWARD",
               notes: movementNote
             }

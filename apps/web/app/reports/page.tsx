@@ -116,6 +116,39 @@ function PriorityList({ rows }: { rows: any[] }) {
   );
 }
 
+function DailyProductionChanges({ rows }: { rows: any[] }) {
+  return (
+    <section className="panel section-panel daily-change-panel">
+      <div className="panel-head">
+        <div>
+          <h2>Daily Production Changes</h2>
+          <p>Actual quantity movement found from the latest daily production uploads.</p>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div className="empty">No daily production quantity changes found for this report period.</div>
+      ) : (
+        <div className="daily-change-list">
+          {rows.slice(0, 10).map((row) => (
+            <article key={row.id} className="daily-change-row">
+              <div>
+                <span className={"status-pill " + (row.movementType === "ROLLBACK" ? "status-danger" : "status-neutral")}>{row.movementType}</span>
+                <strong>{row.orderNumber}</strong>
+                <p>{[row.buyerName, row.stageCode].filter(Boolean).join(" / ")} · {formatDateTime(row.createdAt)}</p>
+              </div>
+              <div className="change-lines">
+                {(row.changes ?? []).slice(0, 4).map((change: string) => (
+                  <span key={change}>{change}</span>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DepartmentJudgementTable({ title, rows }: { title: string; rows: any[] }) {
   return (
     <section className="panel section-panel judgement-panel">
@@ -178,6 +211,7 @@ export default async function ReportsPage() {
   const fabricJudgements = departmentJudgements.fabric ?? fabricProgress.departmentJudgements ?? [];
   const samplingJudgements = departmentJudgements.sampling ?? [];
   const allJudgements = [...orderJudgements, ...fabricJudgements, ...samplingJudgements];
+  const dailyProductionChanges = sections.dailyProductionChanges ?? uploadHealth.dailyProductionChanges ?? [];
 
   return (
     <div>
@@ -232,6 +266,8 @@ export default async function ReportsPage() {
       </section>
 
       <DailyReportArchive />
+
+      <DailyProductionChanges rows={dailyProductionChanges} />
 
       <PriorityList rows={allJudgements} />
 
