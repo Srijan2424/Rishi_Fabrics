@@ -33,7 +33,8 @@ const rolePermissions: Record<RoleName, Permission[]> = {
     "MOVE_INVENTORY",
     "CREATE_REWORK",
     "CLOSE_REWORK",
-    "MANAGE_WORKFLOW"
+    "MANAGE_WORKFLOW",
+    "VIEW_REPORTS"
   ],
   MERCHANT: ["VIEW_DASHBOARD", "VIEW_ORDER", "VIEW_SAMPLING", "MANAGE_SAMPLING", "UPLOAD_ERP_FILE"],
   ERP_MANAGER: ["VIEW_ORDER", "CREATE_ORDER", "UPLOAD_ERP_FILE", "APPROVE_IMPORT"],
@@ -52,7 +53,9 @@ const rolePermissions: Record<RoleName, Permission[]> = {
     "MANAGE_USERS",
     "VIEW_MONITORING",
     "MANAGE_ISSUES",
-    "VIEW_WORK_LOGS"
+    "VIEW_WORK_LOGS",
+    "VIEW_REPORTS",
+    "MANAGE_REPORTS"
   ]
 };
 

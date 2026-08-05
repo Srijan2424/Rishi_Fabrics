@@ -338,6 +338,71 @@ function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
 }
 
+function quantityJudgement(input: {
+  plannedQuantity: number;
+  completedQuantity: number;
+  noLatestUpdate?: boolean;
+  atRisk?: boolean;
+}) {
+  const plannedQuantity = Math.max(0, Math.round(Number(input.plannedQuantity || 0)));
+  const completedQuantity = Math.max(0, Math.round(Number(input.completedQuantity || 0)));
+  const remainingQuantity = Math.max(0, plannedQuantity - completedQuantity);
+  const progressPercent = plannedQuantity > 0 ? Math.round((Math.min(completedQuantity, plannedQuantity) / plannedQuantity) * 100) : 0;
+
+  if (plannedQuantity === 0) {
+    return {
+      plannedQuantity,
+      completedQuantity,
+      remainingQuantity,
+      progressPercent,
+      judgement: "NO_PLAN",
+      message: "No planned quantity is available for this item."
+    };
+  }
+
+  if (remainingQuantity === 0) {
+    return {
+      plannedQuantity,
+      completedQuantity,
+      remainingQuantity,
+      progressPercent,
+      judgement: "COMPLETE",
+      message: `${completedQuantity} of ${plannedQuantity} completed. No balance remains.`
+    };
+  }
+
+  if (completedQuantity === 0 || input.noLatestUpdate) {
+    return {
+      plannedQuantity,
+      completedQuantity,
+      remainingQuantity,
+      progressPercent,
+      judgement: "NO_PROGRESS",
+      message: `${completedQuantity} of ${plannedQuantity} completed. ${remainingQuantity} still pending and no latest progress is visible.`
+    };
+  }
+
+  if (input.atRisk || progressPercent < 50) {
+    return {
+      plannedQuantity,
+      completedQuantity,
+      remainingQuantity,
+      progressPercent,
+      judgement: "AT_RISK",
+      message: `${completedQuantity} of ${plannedQuantity} completed. ${remainingQuantity} balance needs follow-up.`
+    };
+  }
+
+  return {
+    plannedQuantity,
+    completedQuantity,
+    remainingQuantity,
+    progressPercent,
+    judgement: "MOVING_FORWARD",
+    message: `${completedQuantity} of ${plannedQuantity} completed. ${remainingQuantity} still pending.`
+  };
+}
+
 function extractDailyProductionUpdates(notes: string | null | undefined) {
   const marker = "Daily production updates:";
   const text = String(notes ?? "");
@@ -509,6 +574,94 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
   })));
   const rowsMissingFromLatestDailyProduction = allDailyProductionRows.filter((row) => row.notReportedInLatestDailyProduction);
   const dailyProductionUpdateRows = allDailyProductionRows.filter((row) => row.updateAlerts.length > 0);
+  const orderDepartmentJudgements = allDailyProductionRows
+    .map((line) => ({
+      id: line.id,
+      department: "ORDERS",
+      process: "Cutting",
+      orderNumber: line.orderNumber,
+      buyerName: line.buyerName,
+      styleName: line.styleName,
+      colorName: line.colorName,
+      productionUnitId: line.productionUnitId,
+      deliveryDate: line.deliveryDate,
+      ...quantityJudgement({
+        plannedQuantity: line.orderQuantity,
+        completedQuantity: line.cuttingTotalQty,
+        noLatestUpdate: line.notReportedInLatestDailyProduction,
+        atRisk: line.status === "RUNNING" && line.notReportedInLatestDailyProduction
+      })
+    }))
+    .filter((row) => row.judgement !== "COMPLETE")
+    .sort((left, right) => left.progressPercent - right.progressPercent)
+    .slice(0, 50);
+  const stitchingDepartmentJudgements = allDailyProductionRows
+    .map((line) => ({
+      id: `${line.id}:stitching`,
+      department: "ORDERS",
+      process: "Stitching / Line Out",
+      orderNumber: line.orderNumber,
+      buyerName: line.buyerName,
+      styleName: line.styleName,
+      colorName: line.colorName,
+      productionUnitId: line.productionUnitId,
+      deliveryDate: line.deliveryDate,
+      ...quantityJudgement({
+        plannedQuantity: line.orderQuantity,
+        completedQuantity: line.totalLineOutQty,
+        noLatestUpdate: line.notReportedInLatestDailyProduction,
+        atRisk: line.status === "RUNNING" && line.notReportedInLatestDailyProduction
+      })
+    }))
+    .filter((row) => row.judgement !== "COMPLETE")
+    .sort((left, right) => left.progressPercent - right.progressPercent)
+    .slice(0, 50);
+  const fabricDepartmentJudgements = fabricRows
+    .map((row) => ({
+      id: row.id,
+      department: "FABRIC",
+      process: "Dyeing / In-house Receipt",
+      buyerName: row.buyerName,
+      styleName: row.styleName,
+      colorName: row.colorName,
+      sourceFileName: row.sourceFileName,
+      ...quantityJudgement({
+        plannedQuantity: row.fabricSentForDyeingKg,
+        completedQuantity: row.inhouseAfterDyeingKg,
+        noLatestUpdate: row.createdAt < weekStart,
+        atRisk: row.actualShortageFabricBalanceKg > 0
+      }),
+      shortageKg: row.actualShortageFabricBalanceKg
+    }))
+    .filter((row) => row.judgement !== "COMPLETE")
+    .sort((left, right) => left.progressPercent - right.progressPercent)
+    .slice(0, 50);
+  const samplingDepartmentJudgements = orders
+    .filter((order) => order.samplingApprovals.length > 0)
+    .map((order) => {
+      const approvedCount = order.samplingApprovals.filter((approval) => approval.status === "APPROVED").length;
+      const pendingApprovalLabels = order.samplingApprovals
+        .filter((approval) => approval.status !== "APPROVED")
+        .map((approval) => approval.label);
+      return {
+        id: order.id,
+        department: "SAMPLING",
+        process: "Buyer Approvals",
+        orderNumber: order.orderNumber,
+        buyerName: order.buyerName,
+        styleName: order.productCategory,
+        pendingApprovals: pendingApprovalLabels,
+        ...quantityJudgement({
+          plannedQuantity: order.samplingApprovals.length,
+          completedQuantity: approvedCount,
+          noLatestUpdate: order.updatedAt < weekStart,
+          atRisk: pendingApprovalLabels.length > 0 && order.deliveryDate <= weekEnd
+        })
+      };
+    })
+    .filter((row) => row.judgement !== "COMPLETE")
+    .sort((left, right) => left.progressPercent - right.progressPercent)
+    .slice(0, 50);
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -569,6 +722,10 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
         averageProgressPercent: average(progressReports.map((report) => report.overallProgressPercent)),
         pipelineProgress,
         stageProgress,
+        departmentJudgements: {
+          cutting: orderDepartmentJudgements,
+          stitching: stitchingDepartmentJudgements
+        },
         riskOrders,
         rowsMissingFromLatestDailyProduction: rowsMissingFromLatestDailyProduction.length,
         missingFromLatestDailyProduction: rowsMissingFromLatestDailyProduction.slice(0, 50)
@@ -581,7 +738,8 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
         sentForDyeingKg: Math.round(sum(fabricRows.map((row) => row.fabricSentForDyeingKg))),
         inhouseAfterDyeingKg: Math.round(sum(fabricRows.map((row) => row.inhouseAfterDyeingKg))),
         shortageKg: Math.round(sum(fabricRows.map((row) => row.actualShortageFabricBalanceKg))),
-        pendingRowsDetail: pendingFabricRows.slice(0, 50)
+        pendingRowsDetail: pendingFabricRows.slice(0, 50),
+        departmentJudgements: fabricDepartmentJudgements
       },
       uploadHealth: {
         uploadsThisWeek: weeklyUploads.length,
@@ -601,6 +759,14 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
       fabricStatus: pendingFabricRows.slice(0, 100),
       wipStatus: weeklyWipRows.slice(0, 100),
       samplingStatus: techPackStyles.slice(0, 100),
+      departmentJudgements: {
+        orders: {
+          cutting: orderDepartmentJudgements,
+          stitching: stitchingDepartmentJudgements
+        },
+        fabric: fabricDepartmentJudgements,
+        sampling: samplingDepartmentJudgements
+      },
       uploadHealthRows: weeklyUploads.slice(0, 50),
       monthlyHistory: dispatchedOrders
     }

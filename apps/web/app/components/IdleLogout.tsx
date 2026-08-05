@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { authFetch, clearPilotSessionToken, clientApiUrl } from "../lib/client-api";
 
-const idleTimeoutMs = 10 * 60 * 1000;
+const idleTimeoutMs = 30 * 60 * 1000;
 const activityEvents = ["click", "keydown", "scroll", "touchstart", "mousemove"];
 
 export function IdleLogout() {

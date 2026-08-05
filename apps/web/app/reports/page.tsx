@@ -31,6 +31,61 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
+function judgementClass(value: string | undefined) {
+  const judgement = String(value ?? "").toUpperCase();
+  if (judgement === "NO_PROGRESS" || judgement === "AT_RISK") return "status-danger";
+  if (judgement === "MOVING_FORWARD") return "status-warning";
+  if (judgement === "COMPLETE") return "status-success";
+  return "status-neutral";
+}
+
+function DepartmentJudgementTable({ title, rows }: { title: string; rows: any[] }) {
+  return (
+    <section className="panel section-panel">
+      <h2>{title}</h2>
+      {rows.length === 0 ? (
+        <div className="empty">No pending judgement items found for this department.</div>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Order / Style</th>
+              <th>Process</th>
+              <th>Planned</th>
+              <th>Completed</th>
+              <th>Balance</th>
+              <th>Progress</th>
+              <th>Judgement</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <strong>{row.orderNumber ?? row.styleName ?? "-"}</strong>
+                  <span className="muted block">{[row.buyerName, row.styleName, row.colorName].filter(Boolean).join(" / ")}</span>
+                </td>
+                <td>{row.process}</td>
+                <td>{row.plannedQuantity}</td>
+                <td>{row.completedQuantity}</td>
+                <td>{row.remainingQuantity}</td>
+                <td><ProgressBar value={row.progressPercent} /></td>
+                <td>
+                  <span className={"status-pill " + judgementClass(row.judgement)}>{row.judgement}</span>
+                  <span className="muted block">{row.message}</span>
+                  {Array.isArray(row.pendingApprovals) && row.pendingApprovals.length > 0 ? (
+                    <span className="muted block">Pending: {row.pendingApprovals.slice(0, 3).join(", ")}</span>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 export default async function ReportsPage() {
   const user = await getCurrentUser();
   if (!user?.permissions.includes("VIEW_REPORTS")) {
@@ -45,6 +100,7 @@ export default async function ReportsPage() {
   const samplingProgress = sections.samplingProgress ?? {};
   const fabricProgress = sections.fabricProgress ?? {};
   const uploadHealth = sections.uploadHealth ?? {};
+  const departmentJudgements = sections.departmentJudgements ?? {};
 
   return (
     <div>
@@ -161,6 +217,26 @@ export default async function ReportsPage() {
           </tbody>
         </table>
       </section>
+
+      <DepartmentJudgementTable
+        title="Department Judgement: Orders / Cutting"
+        rows={departmentJudgements.orders?.cutting ?? productionProgress.departmentJudgements?.cutting ?? []}
+      />
+
+      <DepartmentJudgementTable
+        title="Department Judgement: Orders / Stitching"
+        rows={departmentJudgements.orders?.stitching ?? productionProgress.departmentJudgements?.stitching ?? []}
+      />
+
+      <DepartmentJudgementTable
+        title="Department Judgement: Fabric"
+        rows={departmentJudgements.fabric ?? fabricProgress.departmentJudgements ?? []}
+      />
+
+      <DepartmentJudgementTable
+        title="Department Judgement: Sampling"
+        rows={departmentJudgements.sampling ?? []}
+      />
 
       <div className="grid-two">
         <section className="panel section-panel">
