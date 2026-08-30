@@ -329,12 +329,6 @@ function formatDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-const requiredDailyReportInputs = [
-  { key: "dailyProduction", label: "Daily Production", sourcePrefix: "DAILY_PRODUCTION" },
-  { key: "wip", label: "WIP", sourcePrefix: "WIP_REPORT" },
-  { key: "fabric", label: "Fabric / Dyeing", sourcePrefix: "FABRIC_DYEING" }
-];
-
 function average(values: number[]) {
   if (values.length === 0) return 0;
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
@@ -474,104 +468,12 @@ function groupPipelineProgress(progressReports: Awaited<ReturnType<ProgressServi
   });
 }
 
-async function getDailyReportInputStatus(factoryId: string, reportDate: Date) {
-  const { start, end } = indiaDayRange(reportDate);
-  const uploads = await prisma.upload.findMany({
-    where: {
-      factoryId,
-      status: "APPLIED",
-      createdAt: { gte: start, lte: end }
-    },
-    orderBy: { createdAt: "desc" }
-  });
-
-  const inputs = requiredDailyReportInputs.map((input) => {
-    const upload = uploads.find((row) => row.sourceType.startsWith(input.sourcePrefix));
-    return {
-      ...input,
-      ready: Boolean(upload),
-      upload: upload
-        ? {
-            id: upload.id,
-            fileName: upload.fileName,
-            sourceType: upload.sourceType,
-            rowsAccepted: upload.rowsAccepted,
-            rowsRejected: upload.rowsRejected,
-            createdAt: upload.createdAt
-          }
-        : null
-    };
-  });
-
-  return {
-    reportDate: formatDate(start),
-    ready: inputs.every((input) => input.ready),
-    inputs,
-    missingInputs: inputs.filter((input) => !input.ready).map((input) => input.label),
-    uploadIds: inputs.map((input) => input.upload?.id).filter((id): id is string => Boolean(id))
-  };
-}
-
 function snapshotMetric(snapshot: unknown, path: string, fallback = 0) {
   const value = path.split(".").reduce<unknown>((current, key) => {
     if (!current || typeof current !== "object") return undefined;
     return (current as Record<string, unknown>)[key];
   }, snapshot);
   return typeof value === "number" ? value : fallback;
-}
-
-function dailyReportCsv(report: { reportDate: Date; snapshot: unknown }) {
-  const snapshot = report.snapshot as { metrics?: Record<string, unknown>; sections?: Record<string, any> };
-  const rows: Record<string, unknown>[] = [
-    { section: "Summary", metric: "Running Orders", value: snapshotMetric(snapshot, "metrics.runningOrders") },
-    { section: "Summary", metric: "At Risk Orders", value: snapshotMetric(snapshot, "metrics.atRiskOrders") },
-    { section: "Summary", metric: "Delayed Orders", value: snapshotMetric(snapshot, "metrics.delayedOrders") },
-    { section: "Summary", metric: "Average Order Progress", value: snapshotMetric(snapshot, "metrics.averageOrderProgress") },
-    { section: "Summary", metric: "Rejected Rows", value: snapshotMetric(snapshot, "metrics.rejectedRows") }
-  ];
-  const judgementGroups = snapshot.sections?.departmentJudgements ?? {};
-  const dailyProductionChanges = (snapshot.sections?.dailyProductionChanges ?? []) as Record<string, unknown>[];
-  for (const row of dailyProductionChanges) {
-    rows.push({
-      section: "Daily Production Changes",
-      metric: row.stageCode ?? "Production movement",
-      orderNumber: row.orderNumber,
-      buyerName: row.buyerName,
-      quantity: row.quantity,
-      movementType: row.movementType,
-      changes: Array.isArray(row.changes) ? row.changes.join("; ") : "",
-      createdAt: row.createdAt
-    });
-  }
-  const judgementRows = [
-    ...((judgementGroups.orders?.cutting ?? []) as Record<string, unknown>[]),
-    ...((judgementGroups.orders?.stitching ?? []) as Record<string, unknown>[]),
-    ...((judgementGroups.fabric ?? []) as Record<string, unknown>[]),
-    ...((judgementGroups.sampling ?? []) as Record<string, unknown>[])
-  ];
-
-  for (const row of judgementRows) {
-    rows.push({
-      section: row.department ?? "Judgement",
-      metric: row.process ?? "Progress",
-      orderNumber: row.orderNumber,
-      buyerName: row.buyerName,
-      styleName: row.styleName,
-      colorName: row.colorName,
-      plannedQuantity: row.plannedQuantity,
-      completedQuantity: row.completedQuantity,
-      remainingQuantity: row.remainingQuantity,
-      progressPercent: row.progressPercent,
-      judgement: row.judgement,
-      message: row.message
-    });
-  }
-
-  const headers = Array.from(rows.reduce((keys, row) => {
-    Object.keys(row).forEach((key) => keys.add(key));
-    return keys;
-  }, new Set<string>()));
-  return [headers.join(","), ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(","))].join("\n");
 }
 
 async function buildReportSummary(factoryId: string, selectedDateInput?: Date) {
@@ -911,118 +813,6 @@ reportsRouter.get("/summary", asyncRoute(async (req, res) => {
   const factoryId = String(req.query.factoryId ?? req.authUser?.factoryId ?? "");
   const selectedDate = typeof req.query.week === "string" ? new Date(req.query.week) : new Date();
   res.json(await buildReportSummary(factoryId, selectedDate));
-}));
-
-reportsRouter.get("/daily/status", asyncRoute(async (req, res) => {
-  const factoryId = String(req.query.factoryId ?? req.authUser?.factoryId ?? "");
-  const selectedDate = typeof req.query.date === "string" ? new Date(req.query.date) : new Date();
-  res.json(await getDailyReportInputStatus(factoryId, selectedDate));
-}));
-
-reportsRouter.get("/daily", asyncRoute(async (req, res) => {
-  const factoryId = String(req.query.factoryId ?? req.authUser?.factoryId ?? "");
-  const selectedDate = typeof req.query.date === "string" ? new Date(req.query.date) : new Date();
-  const [inputStatus, reports] = await Promise.all([
-    getDailyReportInputStatus(factoryId, selectedDate),
-    prisma.dailyReport.findMany({
-      where: factoryId ? { factoryId } : undefined,
-      orderBy: { reportDate: "desc" },
-      take: 30,
-      select: {
-        id: true,
-        reportDate: true,
-        status: true,
-        requiredUploadIds: true,
-        generatedAt: true,
-        generatedBy: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    })
-  ]);
-
-  res.json({ inputStatus, reports });
-}));
-
-reportsRouter.post("/daily/generate", asyncRoute(async (req, res) => {
-  const factoryId = String(req.body?.factoryId ?? req.authUser?.factoryId ?? "");
-  const selectedDate = req.body?.date ? new Date(String(req.body.date)) : new Date();
-  const { start } = indiaDayRange(selectedDate);
-  const inputStatus = await getDailyReportInputStatus(factoryId, selectedDate);
-
-  if (!inputStatus.ready) {
-    res.status(400).json({
-      error: "Daily report is not ready yet. Upload and apply Daily Production, WIP, and Fabric / Dyeing sheets first.",
-      inputStatus
-    });
-    return;
-  }
-
-  const snapshot = await buildReportSummary(factoryId, selectedDate);
-  const snapshotJson = JSON.parse(JSON.stringify(snapshot));
-  const report = await prisma.dailyReport.upsert({
-    where: {
-      factoryId_reportDate: {
-        factoryId,
-        reportDate: start
-      }
-    },
-    update: {
-      status: "GENERATED",
-      requiredUploadIds: inputStatus.uploadIds,
-      snapshot: snapshotJson,
-      generatedBy: req.authUser?.id,
-      generatedAt: new Date()
-    },
-    create: {
-      factoryId,
-      reportDate: start,
-      status: "GENERATED",
-      requiredUploadIds: inputStatus.uploadIds,
-      snapshot: snapshotJson,
-      generatedBy: req.authUser?.id
-    }
-  });
-
-  await prisma.event.create({
-    data: {
-      factoryId,
-      type: "REPORT_GENERATED",
-      message: `Daily report generated for ${inputStatus.reportDate}.`,
-      metadata: { reportId: report.id, reportDate: inputStatus.reportDate, requiredUploadIds: inputStatus.uploadIds },
-      createdBy: req.authUser?.id,
-      source: "reports"
-    }
-  });
-
-  res.status(201).json({ report, inputStatus });
-}));
-
-reportsRouter.get("/daily/:id/download.csv", asyncRoute(async (req, res) => {
-  const factoryId = String(req.query.factoryId ?? req.authUser?.factoryId ?? "");
-  const reportId = String(req.params.id);
-  const report = await prisma.dailyReport.findFirstOrThrow({
-    where: {
-      id: reportId,
-      ...(factoryId ? { factoryId } : {})
-    }
-  });
-
-  res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename=\"daily-report-${formatDate(report.reportDate)}.csv\"`);
-  res.send(dailyReportCsv(report));
-}));
-
-reportsRouter.get("/daily/:id", asyncRoute(async (req, res) => {
-  const factoryId = String(req.query.factoryId ?? req.authUser?.factoryId ?? "");
-  const reportId = String(req.params.id);
-  const report = await prisma.dailyReport.findFirstOrThrow({
-    where: {
-      id: reportId,
-      ...(factoryId ? { factoryId } : {})
-    }
-  });
-  res.json(report);
 }));
 
 reportsRouter.get("/:kind.csv", asyncRoute(async (req, res) => {

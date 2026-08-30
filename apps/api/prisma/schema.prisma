@@ -118,7 +118,6 @@ model Factory {
   fabricDyeingSnapshots FabricDyeingSnapshot[]
   wipSnapshots          WipSnapshot[]
   techPackStyles        TechPackStyle[]
-  dailyReports          DailyReport[]
 }
 
 model User {
@@ -620,23 +619,6 @@ model Upload {
   rowsRejected Int      @default(0)
   errors       Json     @default("[]")
   createdAt    DateTime @default(now())
-}
-
-model DailyReport {
-  id                String   @id @default(cuid())
-  factoryId         String
-  reportDate        DateTime
-  status            String   @default("GENERATED")
-  requiredUploadIds String[]
-  snapshot          Json
-  generatedBy       String?
-  generatedAt       DateTime @default(now())
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  factory           Factory  @relation(fields: [factoryId], references: [id])
-
-  @@unique([factoryId, reportDate])
-  @@index([factoryId, generatedAt])
 }
 
 enum TransitionType {

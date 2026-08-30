@@ -1,5 +1,4 @@
 import { apiUrl, getCurrentUser, getReportSummary } from "../lib/api";
-import { DailyReportArchive } from "../components/DailyReportArchive";
 
 function formatDate(value: string | Date | undefined) {
   if (!value) return "-";
@@ -264,8 +263,6 @@ export default async function ReportsPage() {
           summary={`${samplingProgress.pendingApprovals ?? 0} approvals pending · ${samplingProgress.completedOrders ?? 0} completed`}
         />
       </section>
-
-      <DailyReportArchive />
 
       <DailyProductionChanges rows={dailyProductionChanges} />
 
